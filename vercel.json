@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/generate-orders",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/cutoff",
+      "schedule": "0 22 * * *"
+    }
+  ]
+}

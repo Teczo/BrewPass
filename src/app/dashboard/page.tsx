@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { UpcomingOrder } from "@/components/upcoming-order";
 import { getCurrentSubscription } from "@/lib/billing";
-import { locationsCollection, preferencesCollection } from "@/lib/collections";
+import { locationsCollection, ordersCollection, preferencesCollection } from "@/lib/collections";
 import { PLANS } from "@/lib/plans";
+import { locationToJson, orderToJson } from "@/lib/serializers";
+import { localDateOf } from "@/lib/time";
 import { getOnboardingStatus, getOrCreateCurrentUser } from "@/lib/users";
 
 // Session-dependent: must render per-request, never be statically prerendered.
@@ -18,14 +21,19 @@ export default async function DashboardPage() {
   const status = await getOnboardingStatus(user);
   if (!status.completed) redirect("/onboarding");
 
-  const [locations, preferences] = await Promise.all([
+  const [locations, preferences, orders] = await Promise.all([
     locationsCollection(),
     preferencesCollection(),
+    ordersCollection(),
   ]);
-  const [locationDocs, preference, subscription] = await Promise.all([
+  const [locationDocs, preference, subscription, upcomingOrder] = await Promise.all([
     locations.find({ userId: user._id }).sort({ createdAt: 1 }).toArray(),
     preferences.findOne({ userId: user._id }),
     getCurrentSubscription(user._id),
+    orders.findOne(
+      { userId: user._id, date: { $gte: localDateOf(new Date()) } },
+      { sort: { date: 1 } },
+    ),
   ]);
   const hasLiveSubscription = subscription !== null && subscription.status !== "canceled";
 
@@ -74,6 +82,13 @@ export default async function DashboardPage() {
             See plans
           </Link>
         </section>
+      )}
+
+      {upcomingOrder && (
+        <UpcomingOrder
+          order={orderToJson(upcomingOrder)}
+          locations={locationDocs.map(locationToJson)}
+        />
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">

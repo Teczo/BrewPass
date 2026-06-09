@@ -86,6 +86,8 @@ export async function ensureIndexes(): Promise<void> {
     orders.createIndex({ status: 1, cutoffAt: 1 }),
     deliveries.createIndex({ orderId: 1 }, { unique: true }),
     signals.createIndex({ userId: 1, date: 1 }),
+    // One preference signal per confirmed order.
+    signals.createIndex({ orderId: 1 }, { unique: true }),
     // Webhook idempotency: each delivered event is claimed exactly once.
     webhooks.createIndex({ source: 1, eventId: 1 }, { unique: true }),
   ]);
