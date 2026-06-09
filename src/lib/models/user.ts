@@ -14,5 +14,7 @@ export const userSchema = baseDocumentSchema.extend({
   role: userRoleSchema,
   /** FCM device registration tokens for push notifications. */
   fcmTokens: z.array(z.string()),
+  /** Set when the user finishes the onboarding flow (profile → locations → preferences). */
+  onboardingCompletedAt: z.date().optional(),
 });
 export type User = z.infer<typeof userSchema>;
