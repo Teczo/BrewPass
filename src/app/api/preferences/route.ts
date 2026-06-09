@@ -1,0 +1,73 @@
+import { ObjectId } from "mongodb";
+import { NextResponse } from "next/server";
+
+import { locationsCollection, preferencesCollection, usersCollection } from "@/lib/collections";
+import { preferenceToJson } from "@/lib/serializers";
+import { getOnboardingStatus, getOrCreateCurrentUser } from "@/lib/users";
+import { preferenceInputSchema } from "@/lib/validation";
+
+export const runtime = "nodejs";
+
+export async function GET() {
+  const user = await getOrCreateCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const preferences = await preferencesCollection();
+  const doc = await preferences.findOne({ userId: user._id });
+  return NextResponse.json({ preference: doc ? preferenceToJson(doc) : null });
+}
+
+export async function PUT(request: Request) {
+  const user = await getOrCreateCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const parsed = preferenceInputSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid input", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+
+  // The default location must exist and belong to this user.
+  const defaultLocationId = new ObjectId(parsed.data.defaultLocationId);
+  const locations = await locationsCollection();
+  const location = await locations.findOne({ _id: defaultLocationId, userId: user._id });
+  if (!location) {
+    return NextResponse.json({ error: "Default location not found" }, { status: 422 });
+  }
+
+  const now = new Date();
+  const preferences = await preferencesCollection();
+  const updated = await preferences.findOneAndUpdate(
+    { userId: user._id },
+    {
+      $set: {
+        defaultDrink: parsed.data.defaultDrink,
+        schedule: parsed.data.schedule,
+        defaultLocationId,
+        updatedAt: now,
+      },
+      $setOnInsert: { _id: new ObjectId(), userId: user._id, createdAt: now },
+    },
+    { upsert: true, returnDocument: "after" },
+  );
+  if (!updated) {
+    return NextResponse.json({ error: "Failed to save preference" }, { status: 500 });
+  }
+
+  // Preferences are the last onboarding step — mark completion once
+  // profile and location are also in place.
+  if (!user.onboardingCompletedAt) {
+    const status = await getOnboardingStatus({ ...user, onboardingCompletedAt: undefined });
+    if (status.profileComplete && status.hasLocation) {
+      const users = await usersCollection();
+      await users.updateOne(
+        { _id: user._id, onboardingCompletedAt: { $exists: false } },
+        { $set: { onboardingCompletedAt: now, updatedAt: now } },
+      );
+    }
+  }
+
+  return NextResponse.json({ preference: preferenceToJson(updated) });
+}
