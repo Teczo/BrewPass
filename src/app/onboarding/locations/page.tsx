@@ -6,6 +6,9 @@ import { locationsCollection } from "@/lib/collections";
 import { locationToJson } from "@/lib/serializers";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
+// Session-dependent: must render per-request, never be statically prerendered.
+export const dynamic = "force-dynamic";
+
 export default async function OnboardingLocationsPage() {
   const user = await getOrCreateCurrentUser();
   if (!user) redirect("/auth/login?returnTo=/onboarding/locations");

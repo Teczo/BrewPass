@@ -11,6 +11,7 @@ import type {
   PreferenceSignal,
   Subscription,
   User,
+  WebhookEvent,
 } from "@/lib/models";
 
 /** Typed accessors for every collection. Always go through these. */
@@ -51,12 +52,16 @@ export async function preferenceSignalsCollection(): Promise<Collection<Preferen
   return (await getDb()).collection<PreferenceSignal>("preferenceSignals");
 }
 
+export async function webhookEventsCollection(): Promise<Collection<WebhookEvent>> {
+  return (await getDb()).collection<WebhookEvent>("webhookEvents");
+}
+
 /**
  * Indexes the app relies on. Idempotent — safe to call from a setup script
  * or admin route after provisioning a new database.
  */
 export async function ensureIndexes(): Promise<void> {
-  const [users, locations, preferences, subscriptions, orders, deliveries, signals] =
+  const [users, locations, preferences, subscriptions, orders, deliveries, signals, webhooks] =
     await Promise.all([
       usersCollection(),
       locationsCollection(),
@@ -65,6 +70,7 @@ export async function ensureIndexes(): Promise<void> {
       ordersCollection(),
       deliveriesCollection(),
       preferenceSignalsCollection(),
+      webhookEventsCollection(),
     ]);
 
   await Promise.all([
@@ -80,5 +86,7 @@ export async function ensureIndexes(): Promise<void> {
     orders.createIndex({ status: 1, cutoffAt: 1 }),
     deliveries.createIndex({ orderId: 1 }, { unique: true }),
     signals.createIndex({ userId: 1, date: 1 }),
+    // Webhook idempotency: each delivered event is claimed exactly once.
+    webhooks.createIndex({ source: 1, eventId: 1 }, { unique: true }),
   ]);
 }

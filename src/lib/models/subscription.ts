@@ -29,5 +29,7 @@ export const subscriptionSchema = baseDocumentSchema.extend({
   }),
   currentPeriodStart: z.date(),
   currentPeriodEnd: z.date(),
+  /** True when the user cancelled but keeps access until the period ends. */
+  cancelAtPeriodEnd: z.boolean(),
 });
 export type Subscription = z.infer<typeof subscriptionSchema>;
