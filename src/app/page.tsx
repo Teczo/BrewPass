@@ -2,6 +2,9 @@ import Link from "next/link";
 
 import { getSession } from "@/lib/auth0";
 
+// Session-dependent: must render per-request, never be statically prerendered.
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const session = await getSession();
 

@@ -16,5 +16,7 @@ export const userSchema = baseDocumentSchema.extend({
   fcmTokens: z.array(z.string()),
   /** Set when the user finishes the onboarding flow (profile → locations → preferences). */
   onboardingCompletedAt: z.date().optional(),
+  /** Stripe customer id, created lazily on first checkout. */
+  stripeCustomerId: z.string().optional(),
 });
 export type User = z.infer<typeof userSchema>;

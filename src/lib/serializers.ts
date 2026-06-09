@@ -1,4 +1,4 @@
-import type { Location, Preference, User } from "@/lib/models";
+import type { Location, Preference, Subscription, User } from "@/lib/models";
 
 /** JSON-safe shapes sent to the client (ObjectIds and Dates stringified). */
 
@@ -32,6 +32,18 @@ export function preferenceToJson(preference: Preference) {
   };
 }
 
+export function subscriptionToJson(subscription: Subscription) {
+  return {
+    id: subscription._id.toHexString(),
+    plan: subscription.plan,
+    status: subscription.status,
+    quota: subscription.quota,
+    currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
+    cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+  };
+}
+
 export type UserJson = ReturnType<typeof userToJson>;
+export type SubscriptionJson = ReturnType<typeof subscriptionToJson>;
 export type LocationJson = ReturnType<typeof locationToJson>;
 export type PreferenceJson = ReturnType<typeof preferenceToJson>;
