@@ -14,6 +14,16 @@ export const dynamic = "force-dynamic";
 
 const WEEKDAY_LABELS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  scheduled: "Scheduled",
+  confirmed: "Confirmed",
+  preparing: "Preparing",
+  out_for_delivery: "On its way",
+  delivered: "Delivered",
+  skipped: "Skipped",
+  failed: "Failed",
+};
+
 export default async function DashboardPage() {
   const user = await getOrCreateCurrentUser();
   if (!user) redirect("/auth/login?returnTo=/dashboard");
@@ -27,14 +37,17 @@ export default async function DashboardPage() {
     preferencesCollection(),
     ordersCollection(),
   ]);
-  const [locationDocs, preference, subscription, upcomingOrder] = await Promise.all([
+  const today = localDateOf(new Date());
+  const [locationDocs, preference, subscription, upcomingOrder, recentOrders] = await Promise.all([
     locations.find({ userId: user._id }).sort({ createdAt: 1 }).toArray(),
     preferences.findOne({ userId: user._id }),
     getCurrentSubscription(user._id),
-    orders.findOne(
-      { userId: user._id, date: { $gte: localDateOf(new Date()) } },
-      { sort: { date: 1 } },
-    ),
+    orders.findOne({ userId: user._id, date: { $gte: today } }, { sort: { date: 1 } }),
+    orders
+      .find({ userId: user._id, date: { $lt: today } })
+      .sort({ date: -1 })
+      .limit(5)
+      .toArray(),
   ]);
   const hasLiveSubscription = subscription !== null && subscription.status !== "canceled";
 
@@ -140,6 +153,34 @@ export default async function DashboardPage() {
           </ul>
         </section>
       </div>
+
+      {recentOrders.length > 0 && (
+        <section className="rounded-md border border-neutral-200 p-4">
+          <h2 className="font-semibold">Recent orders</h2>
+          <ul className="mt-2 flex flex-col gap-1 text-sm text-neutral-600">
+            {recentOrders.map((order) => (
+              <li key={order._id.toHexString()} className="flex items-center justify-between">
+                <span>
+                  {order.date} — {order.drink.drink} to {order.location.label}
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    order.status === "delivered"
+                      ? "bg-green-100 text-green-800"
+                      : order.status === "failed"
+                        ? "bg-red-100 text-red-700"
+                        : order.status === "skipped"
+                          ? "bg-neutral-100 text-neutral-500"
+                          : "bg-amber-100 text-amber-900"
+                  }`}
+                >
+                  {ORDER_STATUS_LABELS[order.status] ?? order.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="rounded-md border border-neutral-200 p-4">
         <div className="flex items-center justify-between">

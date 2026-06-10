@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentCafeContext } from "@/lib/cafes";
-import { deliveriesCollection, ordersCollection } from "@/lib/collections";
+import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
+import { sendSms } from "@/lib/notifications";
 import { orderToJson } from "@/lib/serializers";
 
 export const runtime = "nodejs";
@@ -80,6 +81,20 @@ export async function POST(request: Request, context: RouteContext) {
       });
     } catch (error) {
       if (!isDuplicateKeyError(error)) throw error;
+    }
+
+    // Optional SMS — best-effort, never blocks the handoff.
+    const users = await usersCollection();
+    const customer = await users.findOne({ _id: updated.userId });
+    if (customer?.phone) {
+      try {
+        await sendSms(
+          customer.phone,
+          `BrewPass: your ${updated.drink.drink} is on its way to ${updated.location.label}.`,
+        );
+      } catch (error) {
+        console.error("Out-for-delivery SMS failed:", error);
+      }
     }
   }
 
