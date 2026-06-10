@@ -32,6 +32,13 @@ export async function POST(request: Request) {
   if (!subscription || subscription.status === "canceled") {
     return NextResponse.json({ error: "No active subscription" }, { status: 404 });
   }
+  // Corporate seats hang off the company's single Stripe subscription.
+  if (subscription.plan === "corporate") {
+    return NextResponse.json(
+      { error: "Your plan is managed by your company's billing owner." },
+      { status: 409 },
+    );
+  }
 
   const stripe = getStripe();
   const id = subscription.stripeSubscriptionId;

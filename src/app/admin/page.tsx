@@ -109,6 +109,7 @@ export default async function AdminPage() {
     email: user.email,
     role: user.role,
     isSelf: user._id.equals(admin._id),
+    studentVerified: Boolean(user.studentVerifiedAt),
   }));
 
   const stats = [

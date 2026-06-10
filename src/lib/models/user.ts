@@ -18,5 +18,7 @@ export const userSchema = baseDocumentSchema.extend({
   onboardingCompletedAt: z.date().optional(),
   /** Stripe customer id, created lazily on first checkout. */
   stripeCustomerId: z.string().optional(),
+  /** Set by an admin after checking proof — unlocks the student plan. */
+  studentVerifiedAt: z.date().optional(),
 });
 export type User = z.infer<typeof userSchema>;

@@ -2,7 +2,13 @@ import { z } from "zod";
 
 import { baseDocumentSchema, objectIdSchema } from "@/lib/models/shared";
 
-export const subscriptionPlanSchema = z.enum(["lite", "weekday", "premium"]);
+export const subscriptionPlanSchema = z.enum([
+  "lite",
+  "weekday",
+  "premium",
+  "student",
+  "corporate",
+]);
 export type SubscriptionPlan = z.infer<typeof subscriptionPlanSchema>;
 
 /** Mirrors the Stripe subscription lifecycle, plus an app-level pause. */
