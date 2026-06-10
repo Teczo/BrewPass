@@ -60,5 +60,7 @@ export const orderSchema = baseDocumentSchema.extend({
   modifiedByUserAt: z.date().optional(),
   /** Populated when status is `failed`. */
   failureReason: z.string().optional(),
+  /** Set when an admin returned this order's quota credit — guards double refunds. */
+  quotaRefundedAt: z.date().optional(),
 });
 export type Order = z.infer<typeof orderSchema>;
