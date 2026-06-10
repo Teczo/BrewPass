@@ -17,6 +17,7 @@ const WEEKDAY_LABELS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export default async function DashboardPage() {
   const user = await getOrCreateCurrentUser();
   if (!user) redirect("/auth/login?returnTo=/dashboard");
+  if (user.role === "cafe") redirect("/cafe");
 
   const status = await getOnboardingStatus(user);
   if (!status.completed) redirect("/onboarding");
