@@ -5,7 +5,10 @@ import { useState } from "react";
 
 import type { OrderJson } from "@/lib/serializers";
 
-export type CafeOrderJson = OrderJson & { customerName: string };
+export type CafeOrderJson = OrderJson & {
+  customerName: string;
+  delivery: { status: string; riderId: string | null } | null;
+};
 
 const COLUMNS = [
   { status: "confirmed", title: "To prepare", action: "preparing", actionLabel: "Start preparing" },
@@ -18,6 +21,64 @@ const COLUMNS = [
   { status: "out_for_delivery", title: "Out for delivery", action: null, actionLabel: null },
   { status: "delivered", title: "Delivered", action: null, actionLabel: null },
 ] as const;
+
+function DeliveryControls({
+  order,
+  busy,
+  onAction,
+}: {
+  order: CafeOrderJson;
+  busy: boolean;
+  onAction: (body: object) => void;
+}) {
+  const [rider, setRider] = useState(order.delivery?.riderId ?? "");
+
+  return (
+    <div className="mt-1 flex flex-col gap-2 border-t border-neutral-100 pt-2">
+      <div className="flex gap-1">
+        <input
+          className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          placeholder="Rider name"
+          value={rider}
+          onChange={(e) => setRider(e.target.value)}
+          maxLength={120}
+        />
+        <button
+          type="button"
+          onClick={() => onAction({ action: "assign", riderId: rider.trim() })}
+          disabled={busy || rider.trim().length === 0}
+          className="rounded-md border border-neutral-300 px-2 py-1 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+        >
+          {order.delivery?.riderId ? "Reassign" : "Assign"}
+        </button>
+      </div>
+      {order.delivery?.riderId && (
+        <p className="text-xs text-neutral-500">Rider: {order.delivery.riderId}</p>
+      )}
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={() => onAction({ action: "delivered" })}
+          disabled={busy}
+          className="flex-1 rounded-md bg-green-700 px-2 py-1.5 text-sm font-medium text-white hover:bg-green-600 disabled:opacity-50"
+        >
+          Mark delivered
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const reason = window.prompt("Why did the delivery fail?");
+            if (reason?.trim()) onAction({ action: "failed", reason: reason.trim() });
+          }}
+          disabled={busy}
+          className="rounded-md border border-red-200 px-2 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+        >
+          Failed
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function formatKlTime(iso: string): string {
   return new Date(iso).toLocaleString("en-MY", {
@@ -32,14 +93,14 @@ export function CafeBoard({ orders }: { orders: CafeOrderJson[] }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function advance(orderId: string, status: string) {
+  async function post(orderId: string, url: string, payload: object) {
     setBusyId(orderId);
     setError(null);
     try {
-      const response = await fetch(`/api/cafe/orders/${orderId}/status`, {
+      const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(payload),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error ?? "Update failed");
@@ -49,6 +110,14 @@ export function CafeBoard({ orders }: { orders: CafeOrderJson[] }) {
     } finally {
       setBusyId(null);
     }
+  }
+
+  function advance(orderId: string, status: string) {
+    return post(orderId, `/api/cafe/orders/${orderId}/status`, { status });
+  }
+
+  function deliveryAction(orderId: string, payload: object) {
+    return post(orderId, `/api/cafe/deliveries/${orderId}`, payload);
   }
 
   return (
@@ -98,6 +167,13 @@ export function CafeBoard({ orders }: { orders: CafeOrderJson[] }) {
                     >
                       {busyId === order.id ? "Updating…" : column.actionLabel}
                     </button>
+                  )}
+                  {order.status === "out_for_delivery" && (
+                    <DeliveryControls
+                      order={order}
+                      busy={busyId !== null}
+                      onAction={(body) => deliveryAction(order.id, body)}
+                    />
                   )}
                 </article>
               ))}

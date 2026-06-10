@@ -19,5 +19,7 @@ export const deliverySchema = baseDocumentSchema.extend({
   assignedAt: z.date().optional(),
   pickedUpAt: z.date().optional(),
   deliveredAt: z.date().optional(),
+  /** Populated when status is `failed`. */
+  failureReason: z.string().optional(),
 });
 export type Delivery = z.infer<typeof deliverySchema>;

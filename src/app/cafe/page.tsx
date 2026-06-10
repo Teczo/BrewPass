@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { CafeBoard, type CafeOrderJson } from "@/components/cafe-board";
 import { getSession } from "@/lib/auth0";
 import { getCurrentCafeContext } from "@/lib/cafes";
-import { ordersCollection, usersCollection } from "@/lib/collections";
+import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
 import { orderToJson } from "@/lib/serializers";
 import { localDateOf, tomorrowLocalDate } from "@/lib/time";
 
@@ -48,18 +48,29 @@ export default async function CafePortalPage() {
   ]);
 
   const users = await usersCollection();
-  const customers = await users
-    .find({ _id: { $in: todayDocs.map((doc) => doc.userId) } })
-    .project<{ _id: (typeof todayDocs)[number]["userId"]; name: string }>({ name: 1 })
-    .toArray();
+  const deliveries = await deliveriesCollection();
+  const [customers, deliveryDocs] = await Promise.all([
+    users
+      .find({ _id: { $in: todayDocs.map((doc) => doc.userId) } })
+      .project<{ _id: (typeof todayDocs)[number]["userId"]; name: string }>({ name: 1 })
+      .toArray(),
+    deliveries.find({ orderId: { $in: todayDocs.map((doc) => doc._id) } }).toArray(),
+  ]);
   const nameById = new Map(
     customers.map((customer) => [customer._id.toHexString(), customer.name]),
   );
+  const deliveryByOrderId = new Map(
+    deliveryDocs.map((delivery) => [delivery.orderId.toHexString(), delivery]),
+  );
 
-  const boardOrders: CafeOrderJson[] = todayDocs.map((doc) => ({
-    ...orderToJson(doc),
-    customerName: nameById.get(doc.userId.toHexString()) ?? "Customer",
-  }));
+  const boardOrders: CafeOrderJson[] = todayDocs.map((doc) => {
+    const delivery = deliveryByOrderId.get(doc._id.toHexString());
+    return {
+      ...orderToJson(doc),
+      customerName: nameById.get(doc.userId.toHexString()) ?? "Customer",
+      delivery: delivery ? { status: delivery.status, riderId: delivery.riderId ?? null } : null,
+    };
+  });
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-6">
