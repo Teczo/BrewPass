@@ -6,6 +6,26 @@ export interface GeocodeResult {
   formattedAddress: string;
 }
 
+/** Coordinates → human-readable address (native "use my location" flow).
+ * Server-side only, same key handling as forward geocoding. */
+export async function reverseGeocode(point: GeoPoint): Promise<string | null> {
+  const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
+  url.searchParams.set("latlng", `${point.lat},${point.lng}`);
+  url.searchParams.set("key", requireEnv("GOOGLE_MAPS_API_KEY"));
+
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Reverse geocoding request failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    status: string;
+    results: Array<{ formatted_address: string }>;
+  };
+  if (data.status !== "OK") return null;
+  return data.results[0]?.formatted_address ?? null;
+}
+
 /**
  * Geocode an address via the Google Maps Geocoding API. Server-side only —
  * the API key must never reach the client. Returns null when the address

@@ -39,12 +39,12 @@ export type GeoPoint = z.infer<typeof geoPointSchema>;
  * drinks/options per café is a business decision settled in later phases.
  */
 export const drinkSpecSchema = z.object({
-  drink: z.string().min(1),
+  drink: z.string().min(1).max(80),
   size: z.enum(["small", "regular", "large"]),
-  milk: z.string().min(1),
+  milk: z.string().min(1).max(40),
   /** Sugar level in steps, 0 = none. */
   sugar: z.number().int().min(0).max(5),
   strength: z.enum(["mild", "regular", "strong", "double"]),
-  notes: z.string().optional(),
+  notes: z.string().max(300).optional(),
 });
 export type DrinkSpec = z.infer<typeof drinkSpecSchema>;

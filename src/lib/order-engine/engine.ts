@@ -9,7 +9,7 @@ import {
   subscriptionsCollection,
   usersCollection,
 } from "@/lib/collections";
-import { sendEmail, sendPushToUser } from "@/lib/notifications";
+import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
 import {
   buildOrder,
   evaluateCutoff,
@@ -207,7 +207,9 @@ export async function notifyOrdersForDate(
       await sendEmail({
         to: user.email,
         subject: title,
-        html: `<p>${body}</p><p><a href="${process.env.APP_BASE_URL ?? ""}/dashboard">Review your order</a></p>`,
+        // body contains user-controlled strings (drink/location names) —
+        // escape before interpolating into HTML.
+        html: `<p>${escapeHtml(body)}</p><p><a href="${process.env.APP_BASE_URL ?? ""}/dashboard">Review your order</a></p>`,
       });
     } catch (error) {
       // Notification failures must never break the engine.
