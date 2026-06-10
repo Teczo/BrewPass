@@ -1,8 +1,12 @@
 import { ObjectId } from "mongodb";
 import type Stripe from "stripe";
 
-import { subscriptionsCollection, usersCollection } from "@/lib/collections";
-import type { Subscription, SubscriptionStatus, User } from "@/lib/models";
+import {
+  corporateAccountsCollection,
+  subscriptionsCollection,
+  usersCollection,
+} from "@/lib/collections";
+import type { CorporateAccount, Subscription, SubscriptionStatus, User } from "@/lib/models";
 import { PLANS, planByLookupKey, type PlanDefinition } from "@/lib/plans";
 import { getStripe } from "@/lib/stripe";
 
@@ -105,6 +109,12 @@ async function resolveUserId(sub: Stripe.Subscription): Promise<ObjectId | null>
 export async function syncSubscriptionFromStripe(
   sub: Stripe.Subscription,
 ): Promise<Subscription | null> {
+  // Corporate subscriptions belong to a CorporateAccount, not a person.
+  if (sub.metadata?.corporateAccountId) {
+    await syncCorporateSubscriptionFromStripe(sub);
+    return null;
+  }
+
   const plan = planFromStripeSubscription(sub);
   if (!plan) {
     console.error(`Stripe subscription ${sub.id} has no recognizable plan; skipping sync.`);
@@ -148,6 +158,107 @@ export async function syncSubscriptionFromStripe(
     { upsert: true, returnDocument: "after" },
   );
   return updated;
+}
+
+/** Synthetic per-member key under the company's single Stripe subscription —
+ * keeps the unique stripeSubscriptionId index and the order engine working
+ * unchanged for corporate members. */
+export function corporateMemberSubKey(accountId: ObjectId, userId: ObjectId): string {
+  return `corp:${accountId.toHexString()}:${userId.toHexString()}`;
+}
+
+/**
+ * Upsert one member's Subscription document from the company's billing
+ * state. Quota usage resets on period rollover, same as personal plans.
+ */
+export async function upsertCorporateMemberSubscription(
+  account: CorporateAccount,
+  memberUserId: ObjectId,
+  now: Date = new Date(),
+): Promise<void> {
+  if (!account.currentPeriodStart || !account.currentPeriodEnd) return;
+
+  const subscriptions = await subscriptionsCollection();
+  const key = corporateMemberSubKey(account._id, memberUserId);
+  const existing = await subscriptions.findOne({ stripeSubscriptionId: key });
+  const isNewPeriod =
+    !existing || existing.currentPeriodStart.getTime() !== account.currentPeriodStart.getTime();
+
+  await subscriptions.updateOne(
+    { stripeSubscriptionId: key },
+    {
+      $set: {
+        userId: memberUserId,
+        plan: "corporate" as const,
+        stripeCustomerId: account.stripeCustomerId ?? "corporate",
+        status: account.status ?? "incomplete",
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: account.currentPeriodStart,
+        currentPeriodEnd: account.currentPeriodEnd,
+        "quota.total": PLANS.corporate.quota,
+        ...(isNewPeriod ? { "quota.used": 0 } : {}),
+        updatedAt: now,
+      },
+      $setOnInsert: { _id: new ObjectId(), createdAt: now },
+    },
+    { upsert: true },
+  );
+}
+
+/** Mark a removed member's seat subscription canceled (order engine stops
+ * generating for them immediately). */
+export async function cancelCorporateMemberSubscription(
+  accountId: ObjectId,
+  memberUserId: ObjectId,
+  now: Date = new Date(),
+): Promise<void> {
+  const subscriptions = await subscriptionsCollection();
+  await subscriptions.updateOne(
+    { stripeSubscriptionId: corporateMemberSubKey(accountId, memberUserId) },
+    { $set: { status: "canceled" as const, updatedAt: now } },
+  );
+}
+
+/**
+ * Sync a corporate Stripe subscription: update the account's billing state
+ * and refresh every member's seat subscription. Seat count follows the
+ * Stripe line-item quantity (Stripe is the source of truth).
+ */
+export async function syncCorporateSubscriptionFromStripe(sub: Stripe.Subscription): Promise<void> {
+  const accountIdRaw = sub.metadata?.corporateAccountId;
+  if (!accountIdRaw || !ObjectId.isValid(accountIdRaw)) {
+    console.error(`Corporate subscription ${sub.id} has an invalid account id; skipping.`);
+    return;
+  }
+
+  const accounts = await corporateAccountsCollection();
+  const item = sub.items.data[0];
+  const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+  const now = new Date();
+
+  const account = await accounts.findOneAndUpdate(
+    { _id: new ObjectId(accountIdRaw) },
+    {
+      $set: {
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: sub.id,
+        status: mapStripeStatus(sub),
+        seatCount: item.quantity ?? 1,
+        currentPeriodStart: new Date(item.current_period_start * 1000),
+        currentPeriodEnd: new Date(item.current_period_end * 1000),
+        updatedAt: now,
+      },
+    },
+    { returnDocument: "after" },
+  );
+  if (!account) {
+    console.error(`Corporate subscription ${sub.id}: account ${accountIdRaw} not found.`);
+    return;
+  }
+
+  for (const memberUserId of account.memberUserIds) {
+    await upsertCorporateMemberSubscription(account, memberUserId, now);
+  }
 }
 
 /** The user's most relevant subscription: most recently updated non-canceled

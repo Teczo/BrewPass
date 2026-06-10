@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSubscription, getOrCreateStripeCustomer, resolvePriceId } from "@/lib/billing";
+import { getOrCreateStripeCustomer, resolvePriceId } from "@/lib/billing";
+import { corporateAccountsCollection } from "@/lib/collections";
 import { requireEnv } from "@/lib/env";
 import { PLANS } from "@/lib/plans";
 import { getStripe } from "@/lib/stripe";
@@ -9,15 +10,14 @@ import { getOrCreateCurrentUser } from "@/lib/users";
 
 export const runtime = "nodejs";
 
-const checkoutInputSchema = z.object({
-  plan: z.enum(["lite", "weekday", "premium", "student"]),
-});
+const checkoutSchema = z.object({ seats: z.number().int().min(1).max(500) });
 
+/** Start the company subscription: one Stripe sub, quantity = seats. */
 export async function POST(request: Request) {
   const user = await getOrCreateCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const parsed = checkoutInputSchema.safeParse(await request.json().catch(() => null));
+  const parsed = checkoutSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid input", issues: parsed.error.issues },
@@ -25,39 +25,32 @@ export async function POST(request: Request) {
     );
   }
 
-  // The student plan is locked behind admin verification.
-  if (parsed.data.plan === "student" && !user.studentVerifiedAt) {
-    return NextResponse.json(
-      {
-        error: "The student plan needs verification first — contact support with your student ID.",
-      },
-      { status: 403 },
-    );
+  const accounts = await corporateAccountsCollection();
+  const account = await accounts.findOne({ billingOwnerUserId: user._id });
+  if (!account) {
+    return NextResponse.json({ error: "Create your corporate account first." }, { status: 404 });
   }
-
-  const existing = await getCurrentSubscription(user._id);
-  if (existing && existing.status !== "canceled") {
+  if (account.status && account.status !== "canceled") {
     return NextResponse.json(
-      { error: "You already have a subscription. Manage it from the billing page." },
+      { error: "This company already has a subscription. Adjust seats instead." },
       { status: 409 },
     );
   }
 
-  const plan = PLANS[parsed.data.plan];
   const [customerId, priceId] = await Promise.all([
     getOrCreateStripeCustomer(user),
-    resolvePriceId(plan),
+    resolvePriceId(PLANS.corporate),
   ]);
 
   const baseUrl = requireEnv("APP_BASE_URL");
   const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${baseUrl}/dashboard/billing?success=1`,
-    cancel_url: `${baseUrl}/dashboard/billing?canceled=1`,
+    line_items: [{ price: priceId, quantity: parsed.data.seats }],
+    success_url: `${baseUrl}/dashboard/corporate?success=1`,
+    cancel_url: `${baseUrl}/dashboard/corporate?canceled=1`,
     subscription_data: {
-      metadata: { userId: user._id.toHexString(), plan: plan.plan },
+      metadata: { corporateAccountId: account._id.toHexString(), plan: "corporate" },
     },
   });
 

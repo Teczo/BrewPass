@@ -5,7 +5,7 @@ import { PlanPicker } from "@/components/plan-picker";
 import { SubscriptionPanel } from "@/components/subscription-panel";
 import { getCurrentSubscription } from "@/lib/billing";
 import { formatMyr } from "@/lib/format";
-import { PLANS, PLAN_LIST } from "@/lib/plans";
+import { PLANS, PUBLIC_PLANS } from "@/lib/plans";
 import { subscriptionToJson } from "@/lib/serializers";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
@@ -54,6 +54,7 @@ export default async function BillingPage({
         <SubscriptionPanel
           subscription={subscriptionToJson(subscription)}
           planName={PLANS[subscription.plan].name}
+          manageable={subscription.plan !== "corporate"}
         />
       ) : (
         <>
@@ -63,16 +64,33 @@ export default async function BillingPage({
             </p>
           )}
           <PlanPicker
-            plans={PLAN_LIST.map((plan) => ({
-              plan: plan.plan,
-              name: plan.name,
-              priceLabel: formatMyr(plan.priceSen),
-              quota: plan.quota,
-              description: plan.description,
-            }))}
+            plans={[...PUBLIC_PLANS, ...(user.studentVerifiedAt ? [PLANS.student] : [])].map(
+              (plan) => ({
+                plan: plan.plan,
+                name: plan.name,
+                priceLabel: formatMyr(plan.priceSen),
+                quota: plan.quota,
+                description: plan.description,
+              }),
+            )}
           />
+          {!user.studentVerifiedAt && (
+            <p className="text-sm text-neutral-500">
+              Studying? Get verified for the Student plan — {formatMyr(PLANS.student.priceSen)} for{" "}
+              {PLANS.student.quota} coffees a month. Contact support with your student ID.
+            </p>
+          )}
         </>
       )}
+
+      <p className="text-sm text-neutral-500">
+        Setting up coffee for a team?{" "}
+        <Link href="/dashboard/corporate" className="text-amber-800 hover:underline">
+          Create a corporate account
+        </Link>{" "}
+        — {formatMyr(PLANS.corporate.priceSen)}/seat, {PLANS.corporate.quota} coffees per member
+        every month.
+      </p>
     </main>
   );
 }

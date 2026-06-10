@@ -17,9 +17,11 @@ const STATUS_LABELS: Record<string, string> = {
 export function SubscriptionPanel({
   subscription,
   planName,
+  manageable = true,
 }: {
   subscription: SubscriptionJson;
   planName: string;
+  manageable?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -81,8 +83,14 @@ export function SubscriptionPanel({
         />
       </div>
 
+      {!manageable && (
+        <p className="text-sm text-neutral-500">
+          This plan is managed by your company&apos;s billing owner.
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-2">
-        {subscription.status === "active" && !subscription.cancelAtPeriodEnd && (
+        {manageable && subscription.status === "active" && !subscription.cancelAtPeriodEnd && (
           <button
             type="button"
             onClick={() => manage("pause")}
@@ -92,7 +100,7 @@ export function SubscriptionPanel({
             Pause
           </button>
         )}
-        {subscription.status === "paused" && (
+        {manageable && subscription.status === "paused" && (
           <button
             type="button"
             onClick={() => manage("resume")}
@@ -102,27 +110,28 @@ export function SubscriptionPanel({
             Resume
           </button>
         )}
-        {subscription.cancelAtPeriodEnd ? (
-          <button
-            type="button"
-            onClick={() => manage("reactivate")}
-            disabled={busy}
-            className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-          >
-            Keep my plan
-          </button>
-        ) : (
-          subscription.status !== "canceled" && (
+        {manageable &&
+          (subscription.cancelAtPeriodEnd ? (
             <button
               type="button"
-              onClick={() => manage("cancel")}
+              onClick={() => manage("reactivate")}
               disabled={busy}
-              className="rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
             >
-              Cancel plan
+              Keep my plan
             </button>
-          )
-        )}
+          ) : (
+            subscription.status !== "canceled" && (
+              <button
+                type="button"
+                onClick={() => manage("cancel")}
+                disabled={busy}
+                className="rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                Cancel plan
+              </button>
+            )
+          ))}
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>

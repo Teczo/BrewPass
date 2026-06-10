@@ -57,6 +57,7 @@ export interface AdminUserRow {
   email: string;
   role: string;
   isSelf: boolean;
+  studentVerified: boolean;
 }
 
 const OVERRIDABLE = new Set(["scheduled", "confirmed", "preparing"]);
@@ -332,24 +333,43 @@ export function AdminUsers({ users }: { users: AdminUserRow[] }) {
               <span className="font-medium">{user.name || "(no name)"}</span>{" "}
               <span className="text-neutral-500">{user.email}</span>
             </span>
-            {user.isSelf ? (
-              <span className="text-xs text-neutral-400">you · {user.role}</span>
-            ) : (
-              <select
+            <span className="flex items-center gap-2">
+              <button
+                type="button"
                 disabled={busy}
-                value={user.role}
-                onChange={(e) =>
-                  run(`/api/admin/users/${user.id}`, "PATCH", { role: e.target.value })
+                onClick={() =>
+                  run(`/api/admin/users/${user.id}`, "PATCH", {
+                    studentVerified: !user.studentVerified,
+                  })
                 }
-                className="rounded border border-neutral-300 px-1 py-1 text-xs"
+                className={`rounded px-2 py-0.5 text-xs ${
+                  user.studentVerified
+                    ? "bg-green-100 text-green-800"
+                    : "border border-neutral-300 text-neutral-500 hover:bg-neutral-50"
+                }`}
+                title="Toggle student verification"
               >
-                {ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-            )}
+                {user.studentVerified ? "Student ✓" : "Verify student"}
+              </button>
+              {user.isSelf ? (
+                <span className="text-xs text-neutral-400">you · {user.role}</span>
+              ) : (
+                <select
+                  disabled={busy}
+                  value={user.role}
+                  onChange={(e) =>
+                    run(`/api/admin/users/${user.id}`, "PATCH", { role: e.target.value })
+                  }
+                  className="rounded border border-neutral-300 px-1 py-1 text-xs"
+                >
+                  {ROLES.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </span>
           </li>
         ))}
       </ul>
