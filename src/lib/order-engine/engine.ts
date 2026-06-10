@@ -16,7 +16,9 @@ import {
   evaluateGeneration,
   nearestCafe,
 } from "@/lib/order-engine/logic";
+import { pickSuggestion } from "@/lib/suggestions";
 import { formatLocalTime12h, isoWeekdayOf, localTimeOf } from "@/lib/time";
+import { makeWeatherCache } from "@/lib/weather";
 
 function isDuplicateKeyError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === 11000;
@@ -109,30 +111,90 @@ export interface NotificationSummary {
 /**
  * Send the night-before notification for every un-notified scheduled order
  * on `localDate`. Each order is claimed by setting notifiedAt first, so
- * re-runs can't double-send (at-most-once delivery).
+ * re-runs can't double-send (at-most-once delivery). A Phase 8 suggestion
+ * is computed from the user's PreferenceSignal history (+ tomorrow's
+ * weather) and stored on the order — advisory only, applied exclusively
+ * through the user-confirmed modify flow.
  */
 export async function notifyOrdersForDate(
   localDate: string,
   now: Date = new Date(),
 ): Promise<NotificationSummary> {
-  const [orders, users] = await Promise.all([ordersCollection(), usersCollection()]);
+  const [orders, users, signals] = await Promise.all([
+    ordersCollection(),
+    usersCollection(),
+    preferenceSignalsCollection(),
+  ]);
   const summary: NotificationSummary = { date: localDate, notified: 0 };
+  const weatherFor = makeWeatherCache();
 
-  // Claim-then-send, one order at a time.
-  for (;;) {
+  const candidates = await orders
+    .find({ date: localDate, status: "scheduled", notifiedAt: { $exists: false } })
+    .project<{ _id: ObjectId }>({ _id: 1 })
+    .toArray();
+
+  for (const candidate of candidates) {
+    const current = await orders.findOne({ _id: candidate._id });
+    if (!current || current.status !== "scheduled" || current.notifiedAt) continue;
+
+    // Compute the suggestion before claiming (read-only, can be slow).
+    let suggestion = null;
+    try {
+      const history = await signals
+        .find({ userId: current.userId })
+        .sort({ date: -1 })
+        .limit(90)
+        .toArray();
+      suggestion = pickSuggestion({
+        signals: history.map((s) => ({
+          weekday: s.context.weekday,
+          weather: s.context.weather,
+          locationLabel: s.context.locationLabel,
+          drink: s.chosenDrink.drink,
+        })),
+        targetWeekday: isoWeekdayOf(localDate),
+        tomorrowWeather: await weatherFor(current.location.geo, localDate),
+        currentDrink: current.drink.drink,
+        currentLocationLabel: current.location.label,
+      });
+    } catch (error) {
+      console.error(`Suggestion for order ${current._id.toHexString()} failed:`, error);
+    }
+
+    // Claim (notifiedAt) and persist the suggestion atomically.
     const order = await orders.findOneAndUpdate(
-      { date: localDate, status: "scheduled", notifiedAt: { $exists: false } },
-      { $set: { notifiedAt: now, updatedAt: now } },
+      { _id: current._id, status: "scheduled", notifiedAt: { $exists: false } },
+      {
+        $set: {
+          notifiedAt: now,
+          updatedAt: now,
+          ...(suggestion
+            ? {
+                suggestion: {
+                  ...(suggestion.kind === "drink" ? { drink: suggestion.drink } : {}),
+                  ...(suggestion.kind === "location"
+                    ? { locationLabel: suggestion.locationLabel }
+                    : {}),
+                  reason: suggestion.reason,
+                  message: suggestion.message,
+                },
+              }
+            : {}),
+        },
+      },
       { returnDocument: "after" },
     );
-    if (!order) break;
+    if (!order) continue; // another worker claimed it
 
     const user = await users.findOne({ _id: order.userId });
     if (!user) continue;
 
     const deliveryTime = formatLocalTime12h(localTimeOf(order.deliverAt));
     const title = "Tomorrow's coffee is ready to go ☕";
-    const body = `A ${order.drink.drink} to ${order.location.label} at ${deliveryTime}. Change or skip before 6:00 AM.`;
+    const body =
+      `A ${order.drink.drink} to ${order.location.label} at ${deliveryTime}. ` +
+      `Change or skip before 6:00 AM.` +
+      (suggestion ? ` 💡 ${suggestion.message}` : "");
 
     try {
       const pushResult = await sendPushToUser(user, { title, body });
@@ -175,6 +237,7 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
     preferenceSignalsCollection(),
   ]);
   const summary: CutoffSummary = { processed: 0, confirmed: 0, failed: [] };
+  const weatherFor = makeWeatherCache();
 
   for (;;) {
     // Claim each due order atomically (scheduled → confirmed). Exactly one
@@ -210,9 +273,11 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
     if (confirmed) {
       summary.confirmed += 1;
 
-      // Phase 8 groundwork: append-only preference signal per confirmed
-      // order (unique on orderId — duplicate inserts are ignored).
+      // Phase 8: append-only preference signal per confirmed order
+      // (unique on orderId — duplicate inserts are ignored). Weather is
+      // recorded so rainy-day patterns can be learned; best-effort.
       try {
+        const weather = await weatherFor(order.location.geo, order.date);
         await signals.insertOne({
           _id: new ObjectId(),
           userId: order.userId,
@@ -221,6 +286,7 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
           context: {
             weekday: isoWeekdayOf(order.date),
             locationLabel: order.location.label,
+            ...(weather !== "unknown" ? { weather } : {}),
           },
           chosenDrink: { ...order.drink },
           userModified: Boolean(order.modifiedByUserAt),
