@@ -8,6 +8,7 @@ import {
   type AdminOrderRow,
   type AdminUserRow,
 } from "@/components/admin-panels";
+import { AdminSetupButton } from "@/components/admin-setup-button";
 import { getCurrentAdmin } from "@/lib/admin";
 import { getSession } from "@/lib/auth0";
 import {
@@ -130,9 +131,12 @@ export default async function AdminPage() {
             {today} · signed in as {admin.email}
           </p>
         </div>
-        <a href="/auth/logout" className="text-sm text-neutral-500 hover:underline">
-          Log out
-        </a>
+        <div className="flex items-center gap-3">
+          <AdminSetupButton />
+          <a href="/auth/logout" className="text-sm text-neutral-500 hover:underline">
+            Log out
+          </a>
+        </div>
       </header>
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
