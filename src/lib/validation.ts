@@ -28,6 +28,27 @@ export const locationInputSchema = z.object({
 });
 export type LocationInput = z.infer<typeof locationInputSchema>;
 
+const objectIdStringSchema = z.string().regex(/^[0-9a-f]{24}$/i, "expected an ObjectId");
+
+/**
+ * Order modification window actions. The server enforces status + cutoff;
+ * this only shapes the payload.
+ */
+export const orderActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("skip") }),
+  z.object({ action: z.literal("unskip") }),
+  z
+    .object({
+      action: z.literal("modify"),
+      drink: drinkSpecSchema.optional(),
+      locationId: objectIdStringSchema.optional(),
+    })
+    .refine((value) => value.drink !== undefined || value.locationId !== undefined, {
+      message: "modify requires drink and/or locationId",
+    }),
+]);
+export type OrderActionInput = z.infer<typeof orderActionSchema>;
+
 export const preferenceInputSchema = z.object({
   defaultDrink: drinkSpecSchema,
   schedule: z.object({
