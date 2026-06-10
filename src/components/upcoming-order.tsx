@@ -106,6 +106,27 @@ export function UpcomingOrder({
         </p>
       )}
 
+      {canModify && order.suggestion && (
+        <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-amber-900">💡 {order.suggestion.message}</p>
+          {order.suggestion.drink && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                act({
+                  action: "modify",
+                  drink: { ...order.drink, drink: order.suggestion!.drink },
+                })
+              }
+              className="shrink-0 rounded-md bg-amber-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              Switch to {order.suggestion.drink}
+            </button>
+          )}
+        </div>
+      )}
+
       {canModify && !editing && (
         <div className="flex gap-2">
           <button

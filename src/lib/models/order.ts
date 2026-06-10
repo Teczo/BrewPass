@@ -62,5 +62,17 @@ export const orderSchema = baseDocumentSchema.extend({
   failureReason: z.string().optional(),
   /** Set when an admin returned this order's quota credit — guards double refunds. */
   quotaRefundedAt: z.date().optional(),
+  /**
+   * Phase 8 advisory suggestion attached at notification time. Never
+   * applied automatically — the user confirms via the modify flow.
+   */
+  suggestion: z
+    .object({
+      drink: z.string().optional(),
+      locationLabel: z.string().optional(),
+      reason: z.enum(["weekday", "rain", "location"]),
+      message: z.string(),
+    })
+    .optional(),
 });
 export type Order = z.infer<typeof orderSchema>;
