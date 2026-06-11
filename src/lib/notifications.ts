@@ -65,6 +65,16 @@ export async function sendPushToUser(
   return { sent: response.successCount, invalidTokens };
 }
 
+/** Escape user-controlled strings before interpolating into email HTML. */
+export function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 /** Best-effort SMS via Twilio's REST API; no-ops when unconfigured. */
 export async function sendSms(to: string, body: string): Promise<boolean> {
   const sid = process.env.TWILIO_ACCOUNT_SID;

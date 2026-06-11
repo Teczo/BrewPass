@@ -10,10 +10,17 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "cap:sync": "cap sync",
+    "cap:ios": "cap add ios",
+    "cap:android": "cap add android"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.22.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/geolocation": "^8.2.0",
+    "@capacitor/push-notifications": "^8.1.1",
     "@sentry/nextjs": "^10.57.0",
     "firebase-admin": "^14.0.0",
     "mongodb": "^7.3.0",
@@ -24,6 +31,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

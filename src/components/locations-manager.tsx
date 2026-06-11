@@ -20,8 +20,44 @@ export function LocationsManager({ initial, nextHref }: LocationsManagerProps) {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   const effectiveLabel = label === "Other" ? customLabel : label;
+
+  /** Native geolocation in the Capacitor shell, browser API on the web. */
+  async function useCurrentLocation() {
+    setLocating(true);
+    setError(null);
+    try {
+      const { Capacitor } = await import("@capacitor/core");
+      let lat: number;
+      let lng: number;
+      if (Capacitor.isNativePlatform()) {
+        const { Geolocation } = await import("@capacitor/geolocation");
+        const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true });
+        lat = position.coords.latitude;
+        lng = position.coords.longitude;
+      } else {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 }),
+        );
+        lat = position.coords.latitude;
+        lng = position.coords.longitude;
+      }
+      const response = await fetch("/api/geocode/reverse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lng }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error ?? "Could not resolve your location");
+      setAddress(body.address as string);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not get your location");
+    } finally {
+      setLocating(false);
+    }
+  }
 
   async function addLocation(event: React.FormEvent) {
     event.preventDefault();
@@ -132,6 +168,14 @@ export function LocationsManager({ initial, nextHref }: LocationsManagerProps) {
           required
           rows={2}
         />
+        <button
+          type="button"
+          onClick={useCurrentLocation}
+          disabled={locating}
+          className="self-start text-sm text-amber-800 hover:underline disabled:opacity-50"
+        >
+          {locating ? "Locating…" : "📍 Use my current location"}
+        </button>
         <input
           className="rounded-md border border-neutral-300 px-3 py-2"
           placeholder="Delivery notes (optional, e.g. 'Level 12, ask for Aiman')"
