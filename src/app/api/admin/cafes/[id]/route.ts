@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
-import { cafesCollection, usersCollection } from "@/lib/collections";
+import { usersCollection, vendorsCollection } from "@/lib/collections";
 
 export const runtime = "nodejs";
 
@@ -26,7 +26,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!ObjectId.isValid(id)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  const cafeId = new ObjectId(id);
+  const vendorId = new ObjectId(id);
 
   const parsed = updateCafeSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
@@ -37,7 +37,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
   const input = parsed.data;
 
-  const cafes = await cafesCollection();
+  const vendors = await vendorsCollection();
   const users = await usersCollection();
   const now = new Date();
 
@@ -49,8 +49,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         { status: 404 },
       );
     }
-    const result = await cafes.updateOne(
-      { _id: cafeId },
+    const result = await vendors.updateOne(
+      { _id: vendorId },
       { $addToSet: { portalUserSubs: staff.authSub }, $set: { updatedAt: now } },
     );
     if (result.matchedCount === 0) {
@@ -63,18 +63,20 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   if (input.removeStaffSub) {
-    await cafes.updateOne(
-      { _id: cafeId },
+    await vendors.updateOne(
+      { _id: vendorId },
       { $pull: { portalUserSubs: input.removeStaffSub }, $set: { updatedAt: now } },
     );
   }
 
   const fieldUpdates: Record<string, unknown> = {};
-  if (input.active !== undefined) fieldUpdates.active = input.active;
+  // The admin UI still speaks v1's active toggle; map it onto the vendor
+  // lifecycle (full status controls arrive in Phase B).
+  if (input.active !== undefined) fieldUpdates.status = input.active ? "active" : "paused";
   if (input.capacityPerHour !== undefined) fieldUpdates.capacityPerHour = input.capacityPerHour;
   if (Object.keys(fieldUpdates).length > 0) {
-    const result = await cafes.updateOne(
-      { _id: cafeId },
+    const result = await vendors.updateOne(
+      { _id: vendorId },
       { $set: { ...fieldUpdates, updatedAt: now } },
     );
     if (result.matchedCount === 0) {

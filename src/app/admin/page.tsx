@@ -8,14 +8,14 @@ import {
   type AdminOrderRow,
   type AdminUserRow,
 } from "@/components/admin-panels";
-import { AdminSetupButton } from "@/components/admin-setup-button";
+import { AdminMigrateButton, AdminSetupButton } from "@/components/admin-setup-button";
 import { getCurrentAdmin } from "@/lib/admin";
 import { getSession } from "@/lib/auth0";
 import {
-  cafesCollection,
   ordersCollection,
   subscriptionsCollection,
   usersCollection,
+  vendorsCollection,
 } from "@/lib/collections";
 import { localDateOf } from "@/lib/time";
 
@@ -40,23 +40,25 @@ export default async function AdminPage() {
   }
 
   const today = localDateOf(new Date());
-  const [orders, cafes, users, subscriptions] = await Promise.all([
+  const [orders, vendors, users, subscriptions] = await Promise.all([
     ordersCollection(),
-    cafesCollection(),
+    vendorsCollection(),
     usersCollection(),
     subscriptionsCollection(),
   ]);
 
-  const [todayOrders, cafeDocs, userDocs, activeSubs, totalUsers] = await Promise.all([
+  const [todayOrders, vendorDocs, userDocs, activeSubs, totalUsers] = await Promise.all([
     orders.find({ date: today }).sort({ deliverAt: 1 }).limit(200).toArray(),
-    cafes.find({}).sort({ name: 1 }).toArray(),
+    vendors.find({}).sort({ businessName: 1 }).toArray(),
     users.find({}).sort({ createdAt: -1 }).limit(100).toArray(),
     subscriptions.countDocuments({ status: { $in: ["active", "trialing"] } }),
     users.estimatedDocumentCount(),
   ]);
 
   const nameById = new Map(userDocs.map((user) => [user._id.toHexString(), user.name]));
-  const cafeNameById = new Map(cafeDocs.map((cafe) => [cafe._id.toHexString(), cafe.name]));
+  const vendorNameById = new Map(
+    vendorDocs.map((vendor) => [vendor._id.toHexString(), vendor.businessName]),
+  );
 
   // Fill in customer names not in the latest-100 slice.
   const missingUserIds = todayOrders
@@ -76,10 +78,10 @@ export default async function AdminPage() {
   }
   const failures = todayOrders.filter((order) => order.status === "failed");
 
-  const todayCountByCafe = new Map<string, number>();
+  const todayCountByVendor = new Map<string, number>();
   for (const order of todayOrders) {
-    const key = order.cafeId.toHexString();
-    todayCountByCafe.set(key, (todayCountByCafe.get(key) ?? 0) + 1);
+    const key = order.vendorId.toHexString();
+    todayCountByVendor.set(key, (todayCountByVendor.get(key) ?? 0) + 1);
   }
 
   const orderRows: AdminOrderRow[] = todayOrders.map((order) => ({
@@ -87,21 +89,21 @@ export default async function AdminPage() {
     customerName: nameById.get(order.userId.toHexString()) ?? "Customer",
     drink: order.drink.drink,
     locationLabel: order.location.label,
-    cafeName: cafeNameById.get(order.cafeId.toHexString()) ?? "?",
+    cafeName: vendorNameById.get(order.vendorId.toHexString()) ?? "?",
     status: order.status,
     deliverAt: order.deliverAt.toISOString(),
     failureReason: order.failureReason ?? null,
   }));
 
   const subByEmail = new Map(userDocs.map((user) => [user.authSub, user.name]));
-  const cafeRows: AdminCafeRow[] = cafeDocs.map((cafe) => ({
-    id: cafe._id.toHexString(),
-    name: cafe.name,
-    address: cafe.address,
-    capacityPerHour: cafe.capacityPerHour,
-    active: cafe.active,
-    staff: cafe.portalUserSubs.map((sub) => ({ sub, name: subByEmail.get(sub) ?? sub })),
-    todayCount: todayCountByCafe.get(cafe._id.toHexString()) ?? 0,
+  const cafeRows: AdminCafeRow[] = vendorDocs.map((vendor) => ({
+    id: vendor._id.toHexString(),
+    name: vendor.businessName,
+    address: vendor.address,
+    capacityPerHour: vendor.capacityPerHour,
+    active: vendor.status === "active",
+    staff: vendor.portalUserSubs.map((sub) => ({ sub, name: subByEmail.get(sub) ?? sub })),
+    todayCount: todayCountByVendor.get(vendor._id.toHexString()) ?? 0,
   }));
 
   const userRows: AdminUserRow[] = userDocs.map((user) => ({
@@ -133,6 +135,7 @@ export default async function AdminPage() {
         </div>
         <div className="flex items-center gap-3">
           <AdminSetupButton />
+          <AdminMigrateButton />
           <a href="/auth/logout" className="text-sm text-neutral-500 hover:underline">
             Log out
           </a>

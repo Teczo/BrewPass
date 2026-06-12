@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 
 import { CafeBoard, type CafeOrderJson } from "@/components/cafe-board";
 import { getSession } from "@/lib/auth0";
-import { getCurrentCafeContext } from "@/lib/cafes";
 import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
+import { getCurrentVendorContext } from "@/lib/vendors";
 import { orderToJson } from "@/lib/serializers";
 import { localDateOf, tomorrowLocalDate } from "@/lib/time";
 
@@ -14,7 +14,7 @@ export default async function CafePortalPage() {
   const session = await getSession();
   if (!session) redirect("/auth/login?returnTo=/cafe");
 
-  const context = await getCurrentCafeContext();
+  const context = await getCurrentVendorContext();
   if (!context) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
@@ -38,13 +38,13 @@ export default async function CafePortalPage() {
   const [todayDocs, tomorrowCount] = await Promise.all([
     orders
       .find({
-        cafeId: context.cafe._id,
+        vendorId: context.vendor._id,
         date: today,
         status: { $in: ["confirmed", "preparing", "out_for_delivery", "delivered"] },
       })
       .sort({ deliverAt: 1 })
       .toArray(),
-    orders.countDocuments({ cafeId: context.cafe._id, date: tomorrow, status: "scheduled" }),
+    orders.countDocuments({ vendorId: context.vendor._id, date: tomorrow, status: "scheduled" }),
   ]);
 
   const users = await usersCollection();
@@ -76,7 +76,7 @@ export default async function CafePortalPage() {
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-6">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{context.cafe.name}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{context.vendor.businessName}</h1>
           <p className="text-sm text-neutral-500">
             Today&apos;s queue · {today}
             {tomorrowCount > 0 &&

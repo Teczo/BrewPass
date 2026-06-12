@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
-import { cafesCollection, ordersCollection, subscriptionsCollection } from "@/lib/collections";
+import { ordersCollection, subscriptionsCollection, vendorsCollection } from "@/lib/collections";
 
 export const runtime = "nodejs";
 
@@ -84,14 +84,14 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   if (input.action === "reassign_cafe") {
-    const cafes = await cafesCollection();
-    const cafe = await cafes.findOne({ _id: new ObjectId(input.cafeId), active: true });
-    if (!cafe) {
+    const vendors = await vendorsCollection();
+    const vendor = await vendors.findOne({ _id: new ObjectId(input.cafeId), status: "active" });
+    if (!vendor) {
       return NextResponse.json({ error: "Café not found or inactive" }, { status: 404 });
     }
     const result = await orders.updateOne(
       { _id: orderId, status: { $in: ["scheduled", "confirmed", "preparing"] } },
-      { $set: { cafeId: cafe._id, updatedAt: now } },
+      { $set: { vendorId: vendor._id, updatedAt: now } },
     );
     if (result.matchedCount === 0) {
       return NextResponse.json(

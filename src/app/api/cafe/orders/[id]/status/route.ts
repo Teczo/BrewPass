@@ -2,10 +2,10 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentCafeContext } from "@/lib/cafes";
 import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
 import { sendSms } from "@/lib/notifications";
 import { orderToJson } from "@/lib/serializers";
+import { getCurrentVendorContext } from "@/lib/vendors";
 
 export const runtime = "nodejs";
 
@@ -32,8 +32,8 @@ function isDuplicateKeyError(error: unknown): boolean {
  * clicks can't skip steps.
  */
 export async function POST(request: Request, context: RouteContext) {
-  const cafeContext = await getCurrentCafeContext();
-  if (!cafeContext) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const vendorContext = await getCurrentVendorContext();
+  if (!vendorContext) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await context.params;
   if (!ObjectId.isValid(id)) {
@@ -53,7 +53,7 @@ export async function POST(request: Request, context: RouteContext) {
   const updated = await orders.findOneAndUpdate(
     {
       _id: new ObjectId(id),
-      cafeId: cafeContext.cafe._id,
+      vendorId: vendorContext.vendor._id,
       status: VALID_FROM[parsed.data.status],
     },
     { $set: { status: parsed.data.status, updatedAt: now } },

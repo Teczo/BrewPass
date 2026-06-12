@@ -41,7 +41,8 @@ export const orderSchema = baseDocumentSchema.extend({
   /** Drink snapshot — never re-read live preferences after generation. */
   drink: drinkSpecSchema,
   location: orderLocationSnapshotSchema,
-  cafeId: objectIdSchema,
+  /** Fulfilling vendor (v1 cafeId, renamed in the Phase A migration). */
+  vendorId: objectIdSchema,
   status: orderStatusSchema,
   /** Price snapshot in sen (MYR). Set when the order is generated/confirmed. */
   priceSen: moneySenSchema.optional(),

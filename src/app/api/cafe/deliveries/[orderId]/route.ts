@@ -2,9 +2,9 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentCafeContext } from "@/lib/cafes";
 import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
 import { sendSms } from "@/lib/notifications";
+import { getCurrentVendorContext } from "@/lib/vendors";
 
 export const runtime = "nodejs";
 
@@ -24,8 +24,8 @@ const actionSchema = z.discriminatedUnion("action", [
  * dashboard reflects the same state.
  */
 export async function POST(request: Request, context: RouteContext) {
-  const cafeContext = await getCurrentCafeContext();
-  if (!cafeContext) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const vendorContext = await getCurrentVendorContext();
+  if (!vendorContext) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orderId } = await context.params;
   if (!ObjectId.isValid(orderId)) {
@@ -43,7 +43,7 @@ export async function POST(request: Request, context: RouteContext) {
   const orders = await ordersCollection();
   const order = await orders.findOne({
     _id: new ObjectId(orderId),
-    cafeId: cafeContext.cafe._id,
+    vendorId: vendorContext.vendor._id,
   });
   if (!order) {
     return NextResponse.json({ error: "Order not found for this café" }, { status: 404 });
