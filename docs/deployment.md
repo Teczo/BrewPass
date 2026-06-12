@@ -139,7 +139,19 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
    card `4242 4242 4242 4242`, any future expiry/CVC. Verify the plan
    shows "Active" in the app, the products appeared in Stripe, and the
    webhook deliveries show 200s.
-5. Going live: Stripe Malaysia account activation (business details),
+5. **Add-ons (Phase 10)**: pastries/extra drinks picked at the modify
+   step are charged **off-session at the 6 AM cutoff** as PaymentIntents
+   against the card saved during subscription checkout. No extra Stripe
+   configuration is needed — but be aware:
+   - A failed add-on charge never blocks the coffee; the add-ons are
+     dropped and the order is flagged (`addOnsPaymentStatus: failed`).
+   - In live mode, off-session charges can be declined by banks that
+     require 3DS; Stripe retries authentication-exempt flows
+     automatically where possible. Watch the failed-payments list in
+     the Stripe dashboard during the first weeks.
+   - Add-ons are disabled for corporate seats (the saved card belongs
+     to the company).
+6. Going live: Stripe Malaysia account activation (business details),
    swap to live keys, create a **second** webhook endpoint in live mode
    (signing secrets differ per mode).
 
@@ -236,12 +248,15 @@ Run through in order:
       an active café!) and link a staff account
 - [ ] Stripe test checkout → plan Active, webhook deliveries 200
 - [ ] Cron auth: `curl -H "Authorization: Bearer $CRON_SECRET" \
-  https://<domain>/api/cron/generate-orders` → JSON summary
+https://<domain>/api/cron/generate-orders` → JSON summary
       (wrong/missing token must give 401/503)
 - [ ] Force a full loop in test: with an active subscription whose
       schedule includes tomorrow, run the generate cron (above), check
       the dashboard shows tomorrow's order, then run
       `/api/cron/cutoff` after 06:00 KL and confirm quota decremented
+- [ ] Add-on charge: add a pastry to tomorrow's order, run the cutoff,
+      and verify the off-session PaymentIntent succeeded in Stripe
+      (test mode uses the card saved at checkout)
 - [ ] Sentry: throw a test error, see it in the dashboard
 
 ## 11. Ongoing operations

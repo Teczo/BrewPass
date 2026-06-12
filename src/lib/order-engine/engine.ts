@@ -1,5 +1,6 @@
 import { ObjectId } from "mongodb";
 
+import { addOnsTotalSen } from "@/lib/addons";
 import {
   cafesCollection,
   locationsCollection,
@@ -9,6 +10,7 @@ import {
   subscriptionsCollection,
   usersCollection,
 } from "@/lib/collections";
+import type { Order } from "@/lib/models";
 import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
 import {
   buildOrder,
@@ -16,6 +18,7 @@ import {
   evaluateGeneration,
   nearestCafe,
 } from "@/lib/order-engine/logic";
+import { getStripe } from "@/lib/stripe";
 import { pickSuggestion } from "@/lib/suggestions";
 import { formatLocalTime12h, isoWeekdayOf, localTimeOf } from "@/lib/time";
 import { makeWeatherCache } from "@/lib/weather";
@@ -275,6 +278,15 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
     if (confirmed) {
       summary.confirmed += 1;
 
+      // Phase 10: charge add-ons off-session to the card saved at
+      // subscription checkout. Idempotent per order via Stripe
+      // idempotency key; the claim above means one attempt per run and
+      // the key dedupes across re-runs. A failed charge drops the
+      // add-ons but NEVER touches the confirmed coffee.
+      if (order.addOns && order.addOns.length > 0 && subscription) {
+        await chargeAddOns(order._id, order.addOns, subscription.stripeSubscriptionId, now);
+      }
+
       // Phase 8: append-only preference signal per confirmed order
       // (unique on orderId — duplicate inserts are ignored). Weather is
       // recorded so rainy-day patterns can be learned; best-effort.
@@ -311,4 +323,62 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
     }
   }
   return summary;
+}
+
+/**
+ * Off-session PaymentIntent for an order's add-ons. The payment method is
+ * the one saved on the customer's subscription at checkout. Failure marks
+ * addOnsPaymentStatus=failed and removes the add-ons; the coffee itself
+ * is untouched (it's covered by the prepaid quota).
+ */
+async function chargeAddOns(
+  orderId: ObjectId,
+  addOns: NonNullable<Order["addOns"]>,
+  stripeSubscriptionId: string,
+  now: Date,
+): Promise<void> {
+  const orders = await ordersCollection();
+  try {
+    const stripe = getStripe();
+    const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+    const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+    const paymentMethod =
+      typeof sub.default_payment_method === "string"
+        ? sub.default_payment_method
+        : sub.default_payment_method?.id;
+
+    const intent = await stripe.paymentIntents.create(
+      {
+        amount: addOnsTotalSen(addOns),
+        currency: "myr",
+        customer: customerId,
+        ...(paymentMethod ? { payment_method: paymentMethod } : {}),
+        off_session: true,
+        confirm: true,
+        description: `BrewPass add-ons: ${addOns.map((a) => a.name).join(", ")}`,
+        metadata: { orderId: orderId.toHexString() },
+      },
+      { idempotencyKey: `addons_${orderId.toHexString()}` },
+    );
+
+    await orders.updateOne(
+      { _id: orderId },
+      {
+        $set: {
+          stripePaymentIntentId: intent.id,
+          addOnsPaymentStatus: "paid" as const,
+          updatedAt: now,
+        },
+      },
+    );
+  } catch (error) {
+    console.error(`Add-on charge for order ${orderId.toHexString()} failed:`, error);
+    await orders.updateOne(
+      { _id: orderId },
+      {
+        $set: { addOnsPaymentStatus: "failed" as const, updatedAt: now },
+        $unset: { addOns: "" },
+      },
+    );
+  }
 }

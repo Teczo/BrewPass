@@ -20,5 +20,7 @@ export const userSchema = baseDocumentSchema.extend({
   stripeCustomerId: z.string().optional(),
   /** Set by an admin after checking proof — unlocks the student plan. */
   studentVerifiedAt: z.date().optional(),
+  /** Opt-in for caffeine/sugar insights (Phase 10). */
+  healthOptInAt: z.date().optional(),
 });
 export type User = z.infer<typeof userSchema>;

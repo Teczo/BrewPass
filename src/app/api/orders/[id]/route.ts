@@ -1,6 +1,8 @@
 import { ObjectId, type UpdateFilter } from "mongodb";
 import { NextResponse } from "next/server";
 
+import { resolveAddOns } from "@/lib/addons";
+import { getCurrentSubscription } from "@/lib/billing";
 import { locationsCollection, ordersCollection } from "@/lib/collections";
 import type { Order } from "@/lib/models";
 import { orderToJson } from "@/lib/serializers";
@@ -52,6 +54,24 @@ export async function PATCH(request: Request, context: RouteContext) {
     fromStatus = "scheduled";
     const set: Record<string, unknown> = { modifiedByUserAt: now, updatedAt: now };
     if (input.drink) set.drink = input.drink;
+    if (input.addOnKeys !== undefined) {
+      const addOns = resolveAddOns(input.addOnKeys);
+      if (!addOns) {
+        return NextResponse.json({ error: "Unknown add-on selected" }, { status: 422 });
+      }
+      if (addOns.length > 0) {
+        // Add-ons are charged to the member's own saved card at cutoff —
+        // corporate seats bill to the company and can't buy extras here.
+        const subscription = await getCurrentSubscription(user._id);
+        if (subscription?.plan === "corporate") {
+          return NextResponse.json(
+            { error: "Add-ons aren't available on corporate plans yet." },
+            { status: 409 },
+          );
+        }
+      }
+      set.addOns = addOns;
+    }
     if (input.locationId) {
       // Re-snapshot from one of the user's own saved locations.
       const locations = await locationsCollection();
