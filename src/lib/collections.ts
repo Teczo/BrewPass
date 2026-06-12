@@ -2,7 +2,6 @@ import { Collection } from "mongodb";
 
 import { getDb } from "@/lib/db";
 import type {
-  Cafe,
   CorporateAccount,
   Delivery,
   Location,
@@ -11,6 +10,7 @@ import type {
   PreferenceSignal,
   Subscription,
   User,
+  Vendor,
   WebhookEvent,
 } from "@/lib/models";
 
@@ -36,8 +36,8 @@ export async function ordersCollection(): Promise<Collection<Order>> {
   return (await getDb()).collection<Order>("orders");
 }
 
-export async function cafesCollection(): Promise<Collection<Cafe>> {
-  return (await getDb()).collection<Cafe>("cafes");
+export async function vendorsCollection(): Promise<Collection<Vendor>> {
+  return (await getDb()).collection<Vendor>("vendors");
 }
 
 export async function deliveriesCollection(): Promise<Collection<Delivery>> {
@@ -61,17 +61,27 @@ export async function webhookEventsCollection(): Promise<Collection<WebhookEvent
  * or admin route after provisioning a new database.
  */
 export async function ensureIndexes(): Promise<void> {
-  const [users, locations, preferences, subscriptions, orders, deliveries, signals, webhooks] =
-    await Promise.all([
-      usersCollection(),
-      locationsCollection(),
-      preferencesCollection(),
-      subscriptionsCollection(),
-      ordersCollection(),
-      deliveriesCollection(),
-      preferenceSignalsCollection(),
-      webhookEventsCollection(),
-    ]);
+  const [
+    users,
+    locations,
+    preferences,
+    subscriptions,
+    orders,
+    vendors,
+    deliveries,
+    signals,
+    webhooks,
+  ] = await Promise.all([
+    usersCollection(),
+    locationsCollection(),
+    preferencesCollection(),
+    subscriptionsCollection(),
+    ordersCollection(),
+    vendorsCollection(),
+    deliveriesCollection(),
+    preferenceSignalsCollection(),
+    webhookEventsCollection(),
+  ]);
 
   await Promise.all([
     users.createIndex({ authSub: 1 }, { unique: true }),
@@ -82,8 +92,10 @@ export async function ensureIndexes(): Promise<void> {
     // Idempotency: one order per user per local date — the cron can never
     // double-generate (critical rule #1).
     orders.createIndex({ userId: 1, date: 1 }, { unique: true }),
-    orders.createIndex({ cafeId: 1, date: 1 }),
+    orders.createIndex({ vendorId: 1, date: 1 }),
     orders.createIndex({ status: 1, cutoffAt: 1 }),
+    // Portal login resolves the operator's vendor by membership.
+    vendors.createIndex({ portalUserSubs: 1 }),
     deliveries.createIndex({ orderId: 1 }, { unique: true }),
     signals.createIndex({ userId: 1, date: 1 }),
     // One preference signal per confirmed order.

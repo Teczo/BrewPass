@@ -2,13 +2,13 @@ import { ObjectId } from "mongodb";
 
 import { addOnsTotalSen } from "@/lib/addons";
 import {
-  cafesCollection,
   locationsCollection,
   ordersCollection,
   preferencesCollection,
   preferenceSignalsCollection,
   subscriptionsCollection,
   usersCollection,
+  vendorsCollection,
 } from "@/lib/collections";
 import type { Order } from "@/lib/models";
 import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
@@ -16,7 +16,7 @@ import {
   buildOrder,
   evaluateCutoff,
   evaluateGeneration,
-  nearestCafe,
+  nearestVendor,
 } from "@/lib/order-engine/logic";
 import { getStripe } from "@/lib/stripe";
 import { pickSuggestion } from "@/lib/suggestions";
@@ -44,17 +44,17 @@ export async function generateOrdersForDate(
   localDate: string,
   now: Date = new Date(),
 ): Promise<GenerationSummary> {
-  const [subscriptions, preferences, locations, cafes, orders] = await Promise.all([
+  const [subscriptions, preferences, locations, vendors, orders] = await Promise.all([
     subscriptionsCollection(),
     preferencesCollection(),
     locationsCollection(),
-    cafesCollection(),
+    vendorsCollection(),
     ordersCollection(),
   ]);
 
-  const [candidates, allCafes] = await Promise.all([
+  const [candidates, allVendors] = await Promise.all([
     subscriptions.find({ status: { $in: ["active", "trialing"] } }).toArray(),
-    cafes.find({ active: true }).toArray(),
+    vendors.find({ status: "active" }).toArray(),
   ]);
 
   const summary: GenerationSummary = { date: localDate, generated: 0, duplicates: 0, skipped: [] };
@@ -78,9 +78,9 @@ export async function generateOrdersForDate(
       continue;
     }
 
-    const cafe = nearestCafe(allCafes, location.geo);
-    if (!cafe) {
-      summary.skipped.push({ subscriptionId: subId, reason: "no_cafe_available" });
+    const vendor = nearestVendor(allVendors, location.geo);
+    if (!vendor) {
+      summary.skipped.push({ subscriptionId: subId, reason: "no_vendor_available" });
       continue;
     }
 
@@ -88,7 +88,7 @@ export async function generateOrdersForDate(
       subscription,
       preference: preference!,
       location,
-      cafe,
+      vendor,
       localDate,
       now,
     });

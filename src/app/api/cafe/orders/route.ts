@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { getCurrentCafeContext } from "@/lib/cafes";
 import { ordersCollection, usersCollection } from "@/lib/collections";
 import { localDateSchema } from "@/lib/models";
 import { orderToJson } from "@/lib/serializers";
 import { localDateOf } from "@/lib/time";
+import { getCurrentVendorContext } from "@/lib/vendors";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  * change or be skipped until 6 AM.
  */
 export async function GET(request: Request) {
-  const context = await getCurrentCafeContext();
+  const context = await getCurrentVendorContext();
   if (!context) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const url = new URL(request.url);
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   const orders = await ordersCollection();
   const docs = await orders
     .find({
-      cafeId: context.cafe._id,
+      vendorId: context.vendor._id,
       date: parsedDate.data,
       status: { $in: ["confirmed", "preparing", "out_for_delivery", "delivered"] },
     })
@@ -46,7 +46,8 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     date: parsedDate.data,
-    cafe: { id: context.cafe._id.toHexString(), name: context.cafe.name },
+    // JSON key stays "cafe" — Phase A changes no client contracts.
+    cafe: { id: context.vendor._id.toHexString(), name: context.vendor.businessName },
     orders: docs.map((doc) => ({
       ...orderToJson(doc),
       customerName: nameById.get(doc.userId.toHexString()) ?? "Customer",

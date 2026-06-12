@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
-import { cafesCollection } from "@/lib/collections";
+import { vendorsCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
-import type { Cafe } from "@/lib/models";
+import type { Vendor } from "@/lib/models";
 
 export const runtime = "nodejs";
 
@@ -36,20 +36,22 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
-  const cafe: Cafe = {
+  // Admin-created vendors go straight to `active` (the v1 flow); the
+  // self-serve application path with `pending` review arrives in Phase B.
+  const vendor: Vendor = {
     _id: new ObjectId(),
-    name: parsed.data.name,
+    businessName: parsed.data.name,
+    status: "active",
     address: geocoded.formattedAddress,
     geo: geocoded.geo,
     capabilities: [],
     capacityPerHour: parsed.data.capacityPerHour,
     portalUserSubs: [],
-    active: true,
     createdAt: now,
     updatedAt: now,
   };
 
-  const cafes = await cafesCollection();
-  await cafes.insertOne(cafe);
-  return NextResponse.json({ id: cafe._id.toHexString() }, { status: 201 });
+  const vendors = await vendorsCollection();
+  await vendors.insertOne(vendor);
+  return NextResponse.json({ id: vendor._id.toHexString() }, { status: 201 });
 }
