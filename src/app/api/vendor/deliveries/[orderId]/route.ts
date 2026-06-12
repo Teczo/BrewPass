@@ -18,7 +18,7 @@ const actionSchema = z.discriminatedUnion("action", [
 ]);
 
 /**
- * Delivery lifecycle, driven from the café portal for MVP. The delivery
+ * Delivery lifecycle, driven from the vendor portal for MVP. The delivery
  * record was created at handoff; this assigns a rider, completes, or
  * fails it — keeping the order document in sync so the customer's
  * dashboard reflects the same state.
@@ -46,7 +46,7 @@ export async function POST(request: Request, context: RouteContext) {
     vendorId: vendorContext.vendor._id,
   });
   if (!order) {
-    return NextResponse.json({ error: "Order not found for this café" }, { status: 404 });
+    return NextResponse.json({ error: "Order not found for this vendor" }, { status: 404 });
   }
   if (order.status !== "out_for_delivery") {
     return NextResponse.json(

@@ -2,7 +2,15 @@ import { z } from "zod";
 
 import { baseDocumentSchema } from "@/lib/models/shared";
 
-export const userRoleSchema = z.enum(["individual", "corporate", "student", "admin", "cafe"]);
+/** `cafe` is the legacy v1 staff role; new vendor staff get `vendor`. */
+export const userRoleSchema = z.enum([
+  "individual",
+  "corporate",
+  "student",
+  "admin",
+  "cafe",
+  "vendor",
+]);
 export type UserRole = z.infer<typeof userRoleSchema>;
 
 export const userSchema = baseDocumentSchema.extend({

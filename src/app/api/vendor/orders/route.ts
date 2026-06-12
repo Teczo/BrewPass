@@ -9,7 +9,7 @@ import { getCurrentVendorContext } from "@/lib/vendors";
 export const runtime = "nodejs";
 
 /**
- * The café's order queue for a given KL date (default today): everything
+ * The vendor's order queue for a given KL date (default today): everything
  * locked at cutoff onward. Scheduled orders are excluded — they can still
  * change or be skipped until 6 AM.
  */
@@ -46,8 +46,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     date: parsedDate.data,
-    // JSON key stays "cafe" — Phase A changes no client contracts.
-    cafe: { id: context.vendor._id.toHexString(), name: context.vendor.businessName },
+    vendor: { id: context.vendor._id.toHexString(), name: context.vendor.businessName },
     orders: docs.map((doc) => ({
       ...orderToJson(doc),
       customerName: nameById.get(doc.userId.toHexString()) ?? "Customer",

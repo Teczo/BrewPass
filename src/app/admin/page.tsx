@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 
 import {
-  AdminCafes,
   AdminOrdersTable,
   AdminUsers,
-  type AdminCafeRow,
+  AdminVendors,
   type AdminOrderRow,
   type AdminUserRow,
+  type AdminVendorRow,
 } from "@/components/admin-panels";
 import { AdminMigrateButton, AdminSetupButton } from "@/components/admin-setup-button";
 import { getCurrentAdmin } from "@/lib/admin";
@@ -89,19 +89,20 @@ export default async function AdminPage() {
     customerName: nameById.get(order.userId.toHexString()) ?? "Customer",
     drink: order.drink.drink,
     locationLabel: order.location.label,
-    cafeName: vendorNameById.get(order.vendorId.toHexString()) ?? "?",
+    vendorName: vendorNameById.get(order.vendorId.toHexString()) ?? "?",
     status: order.status,
     deliverAt: order.deliverAt.toISOString(),
     failureReason: order.failureReason ?? null,
   }));
 
   const subByEmail = new Map(userDocs.map((user) => [user.authSub, user.name]));
-  const cafeRows: AdminCafeRow[] = vendorDocs.map((vendor) => ({
+  const vendorRows: AdminVendorRow[] = vendorDocs.map((vendor) => ({
     id: vendor._id.toHexString(),
     name: vendor.businessName,
     address: vendor.address,
     capacityPerHour: vendor.capacityPerHour,
-    active: vendor.status === "active",
+    status: vendor.status,
+    reviewNote: vendor.reviewNote ?? null,
     staff: vendor.portalUserSubs.map((sub) => ({ sub, name: subByEmail.get(sub) ?? sub })),
     todayCount: todayCountByVendor.get(vendor._id.toHexString()) ?? 0,
   }));
@@ -115,12 +116,15 @@ export default async function AdminPage() {
     studentVerified: Boolean(user.studentVerifiedAt),
   }));
 
+  const pendingApplications = vendorRows.filter((vendor) => vendor.status === "pending").length;
+
   const stats = [
     { label: "Orders today", value: todayOrders.length },
     { label: "Confirmed", value: statusCounts.get("confirmed") ?? 0 },
     { label: "Delivered", value: statusCounts.get("delivered") ?? 0 },
     { label: "Failed", value: failures.length },
     { label: "Active subscriptions", value: activeSubs },
+    { label: "Vendor applications", value: pendingApplications },
     { label: "Users", value: totalUsers },
   ];
 
@@ -169,13 +173,15 @@ export default async function AdminPage() {
         <h2 className="text-lg font-semibold">Today&apos;s orders</h2>
         <AdminOrdersTable
           orders={orderRows}
-          cafes={cafeRows.filter((cafe) => cafe.active).map(({ id, name }) => ({ id, name }))}
+          vendors={vendorRows
+            .filter((vendor) => vendor.status === "active")
+            .map(({ id, name }) => ({ id, name }))}
         />
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Cafés</h2>
-        <AdminCafes cafes={cafeRows} />
+        <h2 className="text-lg font-semibold">Vendors</h2>
+        <AdminVendors vendors={vendorRows} />
       </section>
 
       <section className="flex flex-col gap-3">

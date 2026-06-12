@@ -96,6 +96,11 @@ export async function ensureIndexes(): Promise<void> {
     orders.createIndex({ status: 1, cutoffAt: 1 }),
     // Portal login resolves the operator's vendor by membership.
     vendors.createIndex({ portalUserSubs: 1 }),
+    // One vendor (application) per owning user; concurrent applies collide.
+    vendors.createIndex(
+      { ownerUserId: 1 },
+      { unique: true, partialFilterExpression: { ownerUserId: { $exists: true } } },
+    ),
     deliveries.createIndex({ orderId: 1 }, { unique: true }),
     signals.createIndex({ userId: 1, date: 1 }),
     // One preference signal per confirmed order.

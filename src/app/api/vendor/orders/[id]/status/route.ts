@@ -15,7 +15,7 @@ const statusInputSchema = z.object({
   status: z.enum(["preparing", "out_for_delivery"]),
 });
 
-/** Allowed café-driven transitions; everything else is rejected. */
+/** Allowed vendor-driven transitions; everything else is rejected. */
 const VALID_FROM: Record<string, "confirmed" | "preparing"> = {
   preparing: "confirmed",
   out_for_delivery: "preparing",
@@ -26,8 +26,8 @@ function isDuplicateKeyError(error: unknown): boolean {
 }
 
 /**
- * Café fulfillment: start preparing a confirmed order, or mark it ready
- * and hand it off to delivery. Updates are scoped to the café's own
+ * Vendor fulfillment: start preparing a confirmed order, or mark it ready
+ * and hand it off to delivery. Updates are scoped to the vendor's own
  * orders and filter on the expected current status, so stale or repeated
  * clicks can't skip steps.
  */
@@ -62,7 +62,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (!updated) {
     return NextResponse.json(
-      { error: "Order not found for this café, or it isn't in the right state for that step." },
+      { error: "Order not found for this vendor, or it isn't in the right state for that step." },
       { status: 409 },
     );
   }

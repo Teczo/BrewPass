@@ -9,8 +9,8 @@ import type { Vendor } from "@/lib/models";
 
 export const runtime = "nodejs";
 
-const createCafeSchema = z.object({
-  name: z.string().trim().min(1).max(120),
+const createVendorSchema = z.object({
+  businessName: z.string().trim().min(1).max(120),
   address: z.string().trim().min(5).max(500),
   capacityPerHour: z.number().int().min(1).max(1000),
 });
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const admin = await getCurrentAdmin();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const parsed = createCafeSchema.safeParse(await request.json().catch(() => null));
+  const parsed = createVendorSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid input", issues: parsed.error.issues },
@@ -36,11 +36,11 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
-  // Admin-created vendors go straight to `active` (the v1 flow); the
-  // self-serve application path with `pending` review arrives in Phase B.
+  // Admin-created vendors skip review and go straight to `active`; the
+  // self-serve path is the application flow at /vendor/apply.
   const vendor: Vendor = {
     _id: new ObjectId(),
-    businessName: parsed.data.name,
+    businessName: parsed.data.businessName,
     status: "active",
     address: geocoded.formattedAddress,
     geo: geocoded.geo,

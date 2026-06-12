@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import type { OrderJson } from "@/lib/serializers";
 
-export type CafeOrderJson = OrderJson & {
+export type VendorOrderJson = OrderJson & {
   customerName: string;
   delivery: { status: string; riderId: string | null } | null;
 };
@@ -27,7 +27,7 @@ function DeliveryControls({
   busy,
   onAction,
 }: {
-  order: CafeOrderJson;
+  order: VendorOrderJson;
   busy: boolean;
   onAction: (body: object) => void;
 }) {
@@ -88,7 +88,7 @@ function formatKlTime(iso: string): string {
   });
 }
 
-export function CafeBoard({ orders }: { orders: CafeOrderJson[] }) {
+export function VendorBoard({ orders }: { orders: VendorOrderJson[] }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,11 +113,11 @@ export function CafeBoard({ orders }: { orders: CafeOrderJson[] }) {
   }
 
   function advance(orderId: string, status: string) {
-    return post(orderId, `/api/cafe/orders/${orderId}/status`, { status });
+    return post(orderId, `/api/vendor/orders/${orderId}/status`, { status });
   }
 
   function deliveryAction(orderId: string, payload: object) {
-    return post(orderId, `/api/cafe/deliveries/${orderId}`, payload);
+    return post(orderId, `/api/vendor/deliveries/${orderId}`, payload);
   }
 
   return (

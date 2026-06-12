@@ -12,8 +12,8 @@ type RouteContext = { params: Promise<{ id: string }> };
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("force_skip") }),
   z.object({
-    action: z.literal("reassign_cafe"),
-    cafeId: z.string().regex(/^[0-9a-f]{24}$/i),
+    action: z.literal("reassign_vendor"),
+    vendorId: z.string().regex(/^[0-9a-f]{24}$/i),
   }),
   z.object({ action: z.literal("refund_quota") }),
 ]);
@@ -83,11 +83,11 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: true });
   }
 
-  if (input.action === "reassign_cafe") {
+  if (input.action === "reassign_vendor") {
     const vendors = await vendorsCollection();
-    const vendor = await vendors.findOne({ _id: new ObjectId(input.cafeId), status: "active" });
+    const vendor = await vendors.findOne({ _id: new ObjectId(input.vendorId), status: "active" });
     if (!vendor) {
-      return NextResponse.json({ error: "Café not found or inactive" }, { status: 404 });
+      return NextResponse.json({ error: "Vendor not found or inactive" }, { status: 404 });
     }
     const result = await orders.updateOne(
       { _id: orderId, status: { $in: ["scheduled", "confirmed", "preparing"] } },

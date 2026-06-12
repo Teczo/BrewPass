@@ -31,7 +31,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
 export default async function DashboardPage() {
   const user = await getOrCreateCurrentUser();
   if (!user) redirect("/auth/login?returnTo=/dashboard");
-  if (user.role === "cafe") redirect("/cafe");
+  if (user.role === "cafe" || user.role === "vendor") redirect("/vendor");
 
   const status = await getOnboardingStatus(user);
   if (!status.completed) redirect("/onboarding");
