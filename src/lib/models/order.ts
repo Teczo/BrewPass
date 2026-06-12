@@ -63,6 +63,14 @@ export const orderSchema = baseDocumentSchema.extend({
   /** Set when an admin returned this order's quota credit — guards double refunds. */
   quotaRefundedAt: z.date().optional(),
   /**
+   * Add-on snapshots (name + price frozen at selection). Charged
+   * off-session at cutoff; coffee delivery never depends on this charge.
+   */
+  addOns: z
+    .array(z.object({ key: z.string(), name: z.string(), priceSen: moneySenSchema }))
+    .optional(),
+  addOnsPaymentStatus: z.enum(["paid", "failed"]).optional(),
+  /**
    * Phase 8 advisory suggestion attached at notification time. Never
    * applied automatically — the user confirms via the modify flow.
    */

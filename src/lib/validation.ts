@@ -42,10 +42,16 @@ export const orderActionSchema = z.discriminatedUnion("action", [
       action: z.literal("modify"),
       drink: drinkSpecSchema.optional(),
       locationId: objectIdStringSchema.optional(),
+      /** Add-on catalogue keys; resolved to snapshots server-side. */
+      addOnKeys: z.array(z.string().max(60)).max(10).optional(),
     })
-    .refine((value) => value.drink !== undefined || value.locationId !== undefined, {
-      message: "modify requires drink and/or locationId",
-    }),
+    .refine(
+      (value) =>
+        value.drink !== undefined ||
+        value.locationId !== undefined ||
+        value.addOnKeys !== undefined,
+      { message: "modify requires drink, locationId, and/or addOnKeys" },
+    ),
 ]);
 export type OrderActionInput = z.infer<typeof orderActionSchema>;
 

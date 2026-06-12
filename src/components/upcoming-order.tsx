@@ -27,12 +27,21 @@ function formatKl(iso: string): string {
   });
 }
 
+export interface AddOnOption {
+  key: string;
+  name: string;
+  priceLabel: string;
+}
+
 export function UpcomingOrder({
   order,
   locations,
+  addOnOptions = [],
 }: {
   order: OrderJson;
   locations: LocationJson[];
+  /** Empty when add-ons aren't available (e.g. corporate plans). */
+  addOnOptions?: AddOnOption[];
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -42,8 +51,13 @@ export function UpcomingOrder({
   const [sugar, setSugar] = useState(order.drink.sugar);
   const [strength, setStrength] = useState<string>(order.drink.strength);
   const [locationId, setLocationId] = useState(order.location.locationId);
+  const [addOnKeys, setAddOnKeys] = useState<string[]>(order.addOns.map((addOn) => addOn.key));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  function toggleAddOn(key: string) {
+    setAddOnKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
 
   // Snapshot the clock once per mount; the server re-checks the real
   // cutoff on every request anyway.
@@ -99,6 +113,14 @@ export function UpcomingOrder({
           <p className="mt-1">
             To {order.location.label} at {formatKl(order.deliverAt)}
           </p>
+          {order.addOns.length > 0 && (
+            <p className="mt-1 text-amber-900">
+              + {order.addOns.map((addOn) => addOn.name).join(", ")}
+              {order.addOnsPaymentStatus === "failed" && (
+                <span className="ml-1 text-red-600">(payment failed — removed)</span>
+              )}
+            </p>
+          )}
         </div>
       ) : (
         <p className="text-sm text-neutral-500">
@@ -166,6 +188,7 @@ export function UpcomingOrder({
               action: "modify",
               drink: { drink, size, milk, sugar, strength },
               locationId,
+              ...(addOnOptions.length > 0 ? { addOnKeys } : {}),
             });
           }}
         >
@@ -244,6 +267,31 @@ export function UpcomingOrder({
               </select>
             </label>
           </div>
+          {addOnOptions.length > 0 && (
+            <fieldset className="flex flex-col gap-2 text-sm font-medium">
+              <legend className="mb-1">Add-ons (charged to your card at 6:00 AM)</legend>
+              <div className="flex flex-wrap gap-2">
+                {addOnOptions.map((option) => (
+                  <label
+                    key={option.key}
+                    className={`cursor-pointer rounded-md border px-3 py-2 text-sm ${
+                      addOnKeys.includes(option.key)
+                        ? "border-amber-800 bg-amber-50 text-amber-900"
+                        : "border-neutral-300"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={addOnKeys.includes(option.key)}
+                      onChange={() => toggleAddOn(option.key)}
+                    />
+                    {option.name} · {option.priceLabel}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <div className="flex gap-2">
             <button
               type="submit"

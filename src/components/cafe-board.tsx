@@ -152,6 +152,11 @@ export function CafeBoard({ orders }: { orders: CafeOrderJson[] }) {
                     {order.drink.sugar === 0 ? "no sugar" : `sugar ${order.drink.sugar}`} ·{" "}
                     {order.drink.strength}
                   </p>
+                  {order.addOns.length > 0 && (
+                    <p className="text-sm font-medium text-amber-900">
+                      + {order.addOns.map((addOn) => addOn.name).join(", ")}
+                    </p>
+                  )}
                   {order.drink.notes && (
                     <p className="text-sm text-amber-900">“{order.drink.notes}”</p>
                   )}

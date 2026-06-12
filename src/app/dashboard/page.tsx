@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { HealthCard } from "@/components/health-card";
 import { UpcomingOrder } from "@/components/upcoming-order";
+import { ADD_ON_LIST } from "@/lib/addons";
 import { getCurrentSubscription } from "@/lib/billing";
 import { locationsCollection, ordersCollection, preferencesCollection } from "@/lib/collections";
+import { formatMyr } from "@/lib/format";
+import { summarizeHealth } from "@/lib/health";
 import { PLANS } from "@/lib/plans";
 import { locationToJson, orderToJson } from "@/lib/serializers";
-import { localDateOf } from "@/lib/time";
+import { addDaysLocal, localDateOf } from "@/lib/time";
 import { getOnboardingStatus, getOrCreateCurrentUser } from "@/lib/users";
 
 // Session-dependent: must render per-request, never be statically prerendered.
@@ -55,6 +59,32 @@ export default async function DashboardPage() {
     ? locationDocs.find((location) => location._id.equals(preference.defaultLocationId))
     : undefined;
 
+  // Opt-in health insights: consumed coffees over the last 7 KL days.
+  const healthSummary = user.healthOptInAt
+    ? summarizeHealth(
+        (
+          await orders
+            .find({
+              userId: user._id,
+              date: { $gte: addDaysLocal(today, -7), $lt: today },
+              status: { $in: ["confirmed", "preparing", "out_for_delivery", "delivered"] },
+            })
+            .toArray()
+        ).map((order) => order.drink),
+        7,
+      )
+    : null;
+
+  // Add-ons are personal-card purchases — hidden for corporate seats.
+  const addOnOptions =
+    hasLiveSubscription && subscription.plan !== "corporate"
+      ? ADD_ON_LIST.map((addOn) => ({
+          key: addOn.key,
+          name: addOn.name,
+          priceLabel: formatMyr(addOn.priceSen),
+        }))
+      : [];
+
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 p-6">
       <header className="flex items-center justify-between">
@@ -102,8 +132,11 @@ export default async function DashboardPage() {
         <UpcomingOrder
           order={orderToJson(upcomingOrder)}
           locations={locationDocs.map(locationToJson)}
+          addOnOptions={addOnOptions}
         />
       )}
+
+      <HealthCard optedIn={Boolean(user.healthOptInAt)} summary={healthSummary} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <section className="rounded-md border border-neutral-200 p-4">
