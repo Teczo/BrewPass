@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
-import { cafesCollection, ordersCollection, subscriptionsCollection } from "@/lib/collections";
+import { ordersCollection, subscriptionsCollection, vendorsCollection } from "@/lib/collections";
 
 export const runtime = "nodejs";
 
@@ -12,8 +12,8 @@ type RouteContext = { params: Promise<{ id: string }> };
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("force_skip") }),
   z.object({
-    action: z.literal("reassign_cafe"),
-    cafeId: z.string().regex(/^[0-9a-f]{24}$/i),
+    action: z.literal("reassign_vendor"),
+    vendorId: z.string().regex(/^[0-9a-f]{24}$/i),
   }),
   z.object({ action: z.literal("refund_quota") }),
 ]);
@@ -83,15 +83,15 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: true });
   }
 
-  if (input.action === "reassign_cafe") {
-    const cafes = await cafesCollection();
-    const cafe = await cafes.findOne({ _id: new ObjectId(input.cafeId), active: true });
-    if (!cafe) {
-      return NextResponse.json({ error: "Café not found or inactive" }, { status: 404 });
+  if (input.action === "reassign_vendor") {
+    const vendors = await vendorsCollection();
+    const vendor = await vendors.findOne({ _id: new ObjectId(input.vendorId), status: "active" });
+    if (!vendor) {
+      return NextResponse.json({ error: "Vendor not found or inactive" }, { status: 404 });
     }
     const result = await orders.updateOne(
       { _id: orderId, status: { $in: ["scheduled", "confirmed", "preparing"] } },
-      { $set: { cafeId: cafe._id, updatedAt: now } },
+      { $set: { vendorId: vendor._id, updatedAt: now } },
     );
     if (result.matchedCount === 0) {
       return NextResponse.json(

@@ -2,9 +2,9 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentCafeContext } from "@/lib/cafes";
 import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
 import { sendSms } from "@/lib/notifications";
+import { getCurrentVendorContext } from "@/lib/vendors";
 
 export const runtime = "nodejs";
 
@@ -18,14 +18,14 @@ const actionSchema = z.discriminatedUnion("action", [
 ]);
 
 /**
- * Delivery lifecycle, driven from the café portal for MVP. The delivery
+ * Delivery lifecycle, driven from the vendor portal for MVP. The delivery
  * record was created at handoff; this assigns a rider, completes, or
  * fails it — keeping the order document in sync so the customer's
  * dashboard reflects the same state.
  */
 export async function POST(request: Request, context: RouteContext) {
-  const cafeContext = await getCurrentCafeContext();
-  if (!cafeContext) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const vendorContext = await getCurrentVendorContext();
+  if (!vendorContext) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orderId } = await context.params;
   if (!ObjectId.isValid(orderId)) {
@@ -43,10 +43,10 @@ export async function POST(request: Request, context: RouteContext) {
   const orders = await ordersCollection();
   const order = await orders.findOne({
     _id: new ObjectId(orderId),
-    cafeId: cafeContext.cafe._id,
+    vendorId: vendorContext.vendor._id,
   });
   if (!order) {
-    return NextResponse.json({ error: "Order not found for this café" }, { status: 404 });
+    return NextResponse.json({ error: "Order not found for this vendor" }, { status: 404 });
   }
   if (order.status !== "out_for_delivery") {
     return NextResponse.json(

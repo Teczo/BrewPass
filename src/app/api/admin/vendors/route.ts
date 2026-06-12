@@ -3,14 +3,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
-import { cafesCollection } from "@/lib/collections";
+import { vendorsCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
-import type { Cafe } from "@/lib/models";
+import type { Vendor } from "@/lib/models";
 
 export const runtime = "nodejs";
 
-const createCafeSchema = z.object({
-  name: z.string().trim().min(1).max(120),
+const createVendorSchema = z.object({
+  businessName: z.string().trim().min(1).max(120),
   address: z.string().trim().min(5).max(500),
   capacityPerHour: z.number().int().min(1).max(1000),
 });
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const admin = await getCurrentAdmin();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const parsed = createCafeSchema.safeParse(await request.json().catch(() => null));
+  const parsed = createVendorSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid input", issues: parsed.error.issues },
@@ -36,20 +36,22 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
-  const cafe: Cafe = {
+  // Admin-created vendors skip review and go straight to `active`; the
+  // self-serve path is the application flow at /vendor/apply.
+  const vendor: Vendor = {
     _id: new ObjectId(),
-    name: parsed.data.name,
+    businessName: parsed.data.businessName,
+    status: "active",
     address: geocoded.formattedAddress,
     geo: geocoded.geo,
     capabilities: [],
     capacityPerHour: parsed.data.capacityPerHour,
     portalUserSubs: [],
-    active: true,
     createdAt: now,
     updatedAt: now,
   };
 
-  const cafes = await cafesCollection();
-  await cafes.insertOne(cafe);
-  return NextResponse.json({ id: cafe._id.toHexString() }, { status: 201 });
+  const vendors = await vendorsCollection();
+  await vendors.insertOne(vendor);
+  return NextResponse.json({ id: vendor._id.toHexString() }, { status: 201 });
 }

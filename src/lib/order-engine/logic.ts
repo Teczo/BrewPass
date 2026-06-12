@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
 
-import type { Cafe, GeoPoint, Location, Order, Preference, Subscription } from "@/lib/models";
+import type { GeoPoint, Location, Order, Preference, Subscription, Vendor } from "@/lib/models";
 import { cutoffInstantFor, isoWeekdayOf, utcInstantOfLocal } from "@/lib/time";
 
 /**
@@ -53,15 +53,19 @@ export function distanceKm(a: GeoPoint, b: GeoPoint): number {
   return 2 * 6371 * Math.asin(Math.sqrt(h));
 }
 
-/** Closest active café to the delivery point, or null when none exist. */
-export function nearestCafe(cafes: Cafe[], point: GeoPoint): Cafe | null {
-  let best: Cafe | null = null;
+/**
+ * Closest active vendor to the delivery point, or null when none exist.
+ * Phase A stopgap — the Phase D routing engine (preferred vendor, capacity,
+ * hours, menu coverage) replaces this.
+ */
+export function nearestVendor(vendors: Vendor[], point: GeoPoint): Vendor | null {
+  let best: Vendor | null = null;
   let bestDistance = Infinity;
-  for (const cafe of cafes) {
-    if (!cafe.active) continue;
-    const distance = distanceKm(cafe.geo, point);
+  for (const vendor of vendors) {
+    if (vendor.status !== "active") continue;
+    const distance = distanceKm(vendor.geo, point);
     if (distance < bestDistance) {
-      best = cafe;
+      best = vendor;
       bestDistance = distance;
     }
   }
@@ -69,16 +73,16 @@ export function nearestCafe(cafes: Cafe[], point: GeoPoint): Cafe | null {
 }
 
 /** Assemble the order document: a full snapshot of drink, location, and
- * café at generation time (critical rule #4 — never re-read live prefs). */
+ * vendor at generation time (critical rule #4 — never re-read live prefs). */
 export function buildOrder(args: {
   subscription: Subscription;
   preference: Preference;
   location: Location;
-  cafe: Cafe;
+  vendor: Vendor;
   localDate: string;
   now: Date;
 }): Order {
-  const { subscription, preference, location, cafe, localDate, now } = args;
+  const { subscription, preference, location, vendor, localDate, now } = args;
   return {
     _id: new ObjectId(),
     userId: subscription.userId,
@@ -92,7 +96,7 @@ export function buildOrder(args: {
       geo: { ...location.geo },
       ...(location.notes ? { notes: location.notes } : {}),
     },
-    cafeId: cafe._id,
+    vendorId: vendor._id,
     status: "scheduled",
     cutoffAt: cutoffInstantFor(localDate),
     deliverAt: utcInstantOfLocal(localDate, preference.schedule.time),

@@ -35,18 +35,19 @@ export interface AdminOrderRow {
   customerName: string;
   drink: string;
   locationLabel: string;
-  cafeName: string;
+  vendorName: string;
   status: string;
   deliverAt: string;
   failureReason: string | null;
 }
 
-export interface AdminCafeRow {
+export interface AdminVendorRow {
   id: string;
   name: string;
   address: string;
   capacityPerHour: number;
-  active: boolean;
+  status: string;
+  reviewNote: string | null;
   staff: Array<{ sub: string; name: string }>;
   todayCount: number;
 }
@@ -65,10 +66,10 @@ const REFUNDABLE = new Set(["confirmed", "preparing", "out_for_delivery", "deliv
 
 export function AdminOrdersTable({
   orders,
-  cafes,
+  vendors,
 }: {
   orders: AdminOrderRow[];
-  cafes: Array<{ id: string; name: string }>;
+  vendors: Array<{ id: string; name: string }>;
 }) {
   const { run, busy, error } = useAdminAction();
 
@@ -86,7 +87,7 @@ export function AdminOrdersTable({
               <th className="py-2 pr-3">Time</th>
               <th className="py-2 pr-3">Customer</th>
               <th className="py-2 pr-3">Drink</th>
-              <th className="py-2 pr-3">Café</th>
+              <th className="py-2 pr-3">Vendor</th>
               <th className="py-2 pr-3">Status</th>
               <th className="py-2">Actions</th>
             </tr>
@@ -105,7 +106,7 @@ export function AdminOrdersTable({
                 <td className="py-2 pr-3">
                   {order.drink} → {order.locationLabel}
                 </td>
-                <td className="py-2 pr-3">{order.cafeName}</td>
+                <td className="py-2 pr-3">{order.vendorName}</td>
                 <td className="py-2 pr-3">
                   {order.status}
                   {order.failureReason && (
@@ -134,17 +135,17 @@ export function AdminOrdersTable({
                           onChange={(e) => {
                             if (e.target.value) {
                               run(`/api/admin/orders/${order.id}`, "POST", {
-                                action: "reassign_cafe",
-                                cafeId: e.target.value,
+                                action: "reassign_vendor",
+                                vendorId: e.target.value,
                               });
                             }
                           }}
                           className="rounded border border-neutral-300 px-1 py-1 text-xs"
                         >
-                          <option value="">Reassign café…</option>
-                          {cafes.map((cafe) => (
-                            <option key={cafe.id} value={cafe.id}>
-                              {cafe.name}
+                          <option value="">Reassign vendor…</option>
+                          {vendors.map((vendor) => (
+                            <option key={vendor.id} value={vendor.id}>
+                              {vendor.name}
                             </option>
                           ))}
                         </select>
@@ -175,43 +176,105 @@ export function AdminOrdersTable({
   );
 }
 
-export function AdminCafes({ cafes }: { cafes: AdminCafeRow[] }) {
+/** Statuses an admin can set directly; applications use the review flow. */
+const ADMIN_STATUSES = ["active", "paused", "suspended", "offline"];
+
+const STATUS_BADGE: Record<string, string> = {
+  pending: "bg-amber-100 text-amber-800",
+  rejected: "bg-red-100 text-red-700",
+  active: "bg-green-100 text-green-800",
+  paused: "bg-neutral-100 text-neutral-500",
+  suspended: "bg-red-100 text-red-700",
+  offline: "bg-neutral-100 text-neutral-500",
+};
+
+export function AdminVendors({ vendors }: { vendors: AdminVendorRow[] }) {
   const { run, busy, error } = useAdminAction();
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [capacity, setCapacity] = useState(30);
   const [staffEmails, setStaffEmails] = useState<Record<string, string>>({});
 
+  // Applications first, then everyone else.
+  const sorted = [...vendors].sort(
+    (a, b) => Number(b.status === "pending") - Number(a.status === "pending"),
+  );
+
   return (
     <div className="flex flex-col gap-4">
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {cafes.map((cafe) => (
-        <div key={cafe.id} className="flex flex-col gap-2 rounded-md border border-neutral-200 p-3">
-          <div className="flex items-center justify-between">
+      {sorted.map((vendor) => (
+        <div
+          key={vendor.id}
+          className="flex flex-col gap-2 rounded-md border border-neutral-200 p-3"
+        >
+          <div className="flex items-center justify-between gap-2">
             <div>
               <p className="font-medium">
-                {cafe.name}{" "}
-                {!cafe.active && (
-                  <span className="rounded bg-neutral-100 px-1.5 text-xs text-neutral-500">
-                    inactive
-                  </span>
-                )}
+                {vendor.name}{" "}
+                <span
+                  className={`rounded px-1.5 text-xs ${STATUS_BADGE[vendor.status] ?? "bg-neutral-100"}`}
+                >
+                  {vendor.status}
+                </span>
               </p>
               <p className="text-sm text-neutral-500">
-                {cafe.address} · {cafe.capacityPerHour}/hr · {cafe.todayCount} orders today
+                {vendor.address} · {vendor.capacityPerHour}/hr · {vendor.todayCount} orders today
               </p>
+              {vendor.status === "rejected" && vendor.reviewNote && (
+                <p className="text-xs text-red-600">Rejected: {vendor.reviewNote}</p>
+              )}
             </div>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => run(`/api/admin/cafes/${cafe.id}`, "PATCH", { active: !cafe.active })}
-              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
-            >
-              {cafe.active ? "Deactivate" : "Activate"}
-            </button>
+            {vendor.status === "pending" ? (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    run(`/api/admin/vendors/${vendor.id}/review`, "POST", { action: "approve" })
+                  }
+                  className="rounded bg-green-700 px-2 py-1 text-xs font-medium text-white hover:bg-green-600 disabled:opacity-50"
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    const note = window.prompt("Why is this application rejected?");
+                    if (note?.trim()) {
+                      run(`/api/admin/vendors/${vendor.id}/review`, "POST", {
+                        action: "reject",
+                        note: note.trim(),
+                      });
+                    }
+                  }}
+                  className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              </div>
+            ) : (
+              vendor.status !== "rejected" && (
+                <select
+                  disabled={busy}
+                  value={vendor.status}
+                  onChange={(e) =>
+                    run(`/api/admin/vendors/${vendor.id}`, "PATCH", { status: e.target.value })
+                  }
+                  className="rounded border border-neutral-300 px-1 py-1 text-xs"
+                >
+                  {ADMIN_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              )
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            {cafe.staff.map((member) => (
+            {vendor.staff.map((member) => (
               <span
                 key={member.sub}
                 className="flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-xs"
@@ -221,7 +284,7 @@ export function AdminCafes({ cafes }: { cafes: AdminCafeRow[] }) {
                   type="button"
                   disabled={busy}
                   onClick={() =>
-                    run(`/api/admin/cafes/${cafe.id}`, "PATCH", { removeStaffSub: member.sub })
+                    run(`/api/admin/vendors/${vendor.id}`, "PATCH", { removeStaffSub: member.sub })
                   }
                   className="text-neutral-400 hover:text-red-600"
                   aria-label={`Remove ${member.name}`}
@@ -233,17 +296,17 @@ export function AdminCafes({ cafes }: { cafes: AdminCafeRow[] }) {
             <input
               className="rounded border border-neutral-300 px-2 py-1 text-xs"
               placeholder="staff@email.com"
-              value={staffEmails[cafe.id] ?? ""}
-              onChange={(e) => setStaffEmails((prev) => ({ ...prev, [cafe.id]: e.target.value }))}
+              value={staffEmails[vendor.id] ?? ""}
+              onChange={(e) => setStaffEmails((prev) => ({ ...prev, [vendor.id]: e.target.value }))}
             />
             <button
               type="button"
-              disabled={busy || !(staffEmails[cafe.id] ?? "").includes("@")}
+              disabled={busy || !(staffEmails[vendor.id] ?? "").includes("@")}
               onClick={() => {
-                run(`/api/admin/cafes/${cafe.id}`, "PATCH", {
-                  addStaffEmail: staffEmails[cafe.id],
+                run(`/api/admin/vendors/${vendor.id}`, "PATCH", {
+                  addStaffEmail: staffEmails[vendor.id],
                 });
-                setStaffEmails((prev) => ({ ...prev, [cafe.id]: "" }));
+                setStaffEmails((prev) => ({ ...prev, [vendor.id]: "" }));
               }}
               className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
             >
@@ -257,7 +320,11 @@ export function AdminCafes({ cafes }: { cafes: AdminCafeRow[] }) {
         className="flex flex-wrap items-end gap-2 rounded-md border border-dashed border-neutral-300 p-3"
         onSubmit={(event) => {
           event.preventDefault();
-          run("/api/admin/cafes", "POST", { name, address, capacityPerHour: capacity });
+          run("/api/admin/vendors", "POST", {
+            businessName: name,
+            address,
+            capacityPerHour: capacity,
+          });
           setName("");
           setAddress("");
         }}
@@ -295,14 +362,14 @@ export function AdminCafes({ cafes }: { cafes: AdminCafeRow[] }) {
           disabled={busy}
           className="rounded-md bg-amber-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
         >
-          Add café
+          Add vendor
         </button>
       </form>
     </div>
   );
 }
 
-const ROLES = ["individual", "corporate", "student", "cafe", "admin"];
+const ROLES = ["individual", "corporate", "student", "cafe", "vendor", "admin"];
 
 export function AdminUsers({ users }: { users: AdminUserRow[] }) {
   const { run, busy, error } = useAdminAction();

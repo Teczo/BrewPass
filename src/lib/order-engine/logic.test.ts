@@ -1,14 +1,14 @@
 import { ObjectId } from "mongodb";
 import { describe, expect, it } from "vitest";
 
-import type { Cafe, Location, Order, Preference, Subscription } from "@/lib/models";
+import type { Location, Order, Preference, Subscription, Vendor } from "@/lib/models";
 import {
   buildOrder,
   distanceKm,
   evaluateCutoff,
   evaluateGeneration,
   isModifiable,
-  nearestCafe,
+  nearestVendor,
 } from "@/lib/order-engine/logic";
 
 const now = new Date("2026-06-09T12:00:00Z"); // 20:00 KL on June 9
@@ -65,16 +65,16 @@ function makeLocation(userId: ObjectId): Location {
   };
 }
 
-function makeCafe(overrides: Partial<Cafe> = {}): Cafe {
+function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
   return {
     _id: new ObjectId(),
-    name: "Kopi Corner",
+    businessName: "Kopi Corner",
+    status: "active",
     address: "Jalan Sultan Ismail",
     geo: { lat: 3.14, lng: 101.69 },
     capabilities: ["oat_milk"],
     capacityPerHour: 30,
     portalUserSubs: [],
-    active: true,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -133,24 +133,29 @@ describe("evaluateGeneration", () => {
   });
 });
 
-describe("nearestCafe", () => {
-  it("returns the closest active café", () => {
-    const near = makeCafe({ geo: { lat: 3.14, lng: 101.69 } });
-    const far = makeCafe({ geo: { lat: 3.5, lng: 102.0 } });
-    const result = nearestCafe([far, near], { lat: 3.139, lng: 101.6869 });
+describe("nearestVendor", () => {
+  it("returns the closest active vendor", () => {
+    const near = makeVendor({ geo: { lat: 3.14, lng: 101.69 } });
+    const far = makeVendor({ geo: { lat: 3.5, lng: 102.0 } });
+    const result = nearestVendor([far, near], { lat: 3.139, lng: 101.6869 });
     expect(result?._id.equals(near._id)).toBe(true);
   });
 
-  it("ignores inactive cafés", () => {
-    const nearButClosed = makeCafe({ active: false, geo: { lat: 3.14, lng: 101.69 } });
-    const farButOpen = makeCafe({ geo: { lat: 3.5, lng: 102.0 } });
-    const result = nearestCafe([nearButClosed, farButOpen], { lat: 3.139, lng: 101.6869 });
-    expect(result?._id.equals(farButOpen._id)).toBe(true);
-  });
+  it.each(["pending", "paused", "suspended", "offline"] as const)(
+    "ignores %s vendors",
+    (status) => {
+      const nearButClosed = makeVendor({ status, geo: { lat: 3.14, lng: 101.69 } });
+      const farButOpen = makeVendor({ geo: { lat: 3.5, lng: 102.0 } });
+      const result = nearestVendor([nearButClosed, farButOpen], { lat: 3.139, lng: 101.6869 });
+      expect(result?._id.equals(farButOpen._id)).toBe(true);
+    },
+  );
 
-  it("returns null when no café is available", () => {
-    expect(nearestCafe([], { lat: 3.139, lng: 101.6869 })).toBeNull();
-    expect(nearestCafe([makeCafe({ active: false })], { lat: 3.139, lng: 101.6869 })).toBeNull();
+  it("returns null when no vendor is available", () => {
+    expect(nearestVendor([], { lat: 3.139, lng: 101.6869 })).toBeNull();
+    expect(
+      nearestVendor([makeVendor({ status: "paused" })], { lat: 3.139, lng: 101.6869 }),
+    ).toBeNull();
   });
 });
 
@@ -167,17 +172,17 @@ describe("distanceKm", () => {
 });
 
 describe("buildOrder", () => {
-  it("snapshots drink, location, and café with correct UTC instants", () => {
+  it("snapshots drink, location, and vendor with correct UTC instants", () => {
     const sub = makeSubscription();
     const pref = makePreference(sub.userId);
     const location = makeLocation(sub.userId);
-    const cafe = makeCafe();
+    const vendor = makeVendor();
 
     const order = buildOrder({
       subscription: sub,
       preference: pref,
       location,
-      cafe,
+      vendor,
       localDate: WEDNESDAY,
       now,
     });
@@ -192,7 +197,7 @@ describe("buildOrder", () => {
     expect(order.drink).not.toBe(pref.defaultDrink);
     expect(order.location.label).toBe("Office");
     expect(order.location.notes).toBe("Ask for Aiman");
-    expect(order.cafeId.equals(cafe._id)).toBe(true);
+    expect(order.vendorId.equals(vendor._id)).toBe(true);
     // Cutoff 06:00 KL on June 10 = 22:00 UTC June 9.
     expect(order.cutoffAt.toISOString()).toBe("2026-06-09T22:00:00.000Z");
     // Delivery 08:00 KL on June 10 = 00:00 UTC June 10.
@@ -206,7 +211,7 @@ describe("buildOrder", () => {
       subscription: sub,
       preference: pref,
       location: makeLocation(sub.userId),
-      cafe: makeCafe(),
+      vendor: makeVendor(),
       localDate: WEDNESDAY,
       now,
     });
@@ -254,7 +259,7 @@ describe("isModifiable", () => {
       subscription: sub,
       preference: makePreference(sub.userId),
       location: makeLocation(sub.userId),
-      cafe: makeCafe(),
+      vendor: makeVendor(),
       localDate: WEDNESDAY,
       now,
     });
@@ -291,12 +296,12 @@ describe("idempotency key", () => {
     const sub = makeSubscription();
     const pref = makePreference(sub.userId);
     const location = makeLocation(sub.userId);
-    const cafe = makeCafe();
+    const vendor = makeVendor();
     const a = buildOrder({
       subscription: sub,
       preference: pref,
       location,
-      cafe,
+      vendor,
       localDate: WEDNESDAY,
       now,
     });
@@ -304,7 +309,7 @@ describe("idempotency key", () => {
       subscription: sub,
       preference: pref,
       location,
-      cafe,
+      vendor,
       localDate: WEDNESDAY,
       now,
     });

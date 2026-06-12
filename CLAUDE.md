@@ -1,147 +1,160 @@
-# CLAUDE.md — BrewPass AI
+# CLAUDE.md — BrewPass AI (v2: Multi-Vendor Marketplace)
 
-This file guides Claude Code when building this project. Read it fully before generating code. Follow the phases in order. Do not skip ahead unless I explicitly say so.
+This file guides Claude Code for the **v2 marketplace** build on the `v2-marketplace` branch. Read it fully before generating code. Follow the phases in order. Do not skip ahead unless I explicitly say so.
 
----
-
-## Product Summary
-
-Subscription coffee platform. Users subscribe to a monthly plan; the app delivers a personalized coffee at a predefined time and location every day. AI learns preferences and routines over time. The platform partners with existing cafés (does not own them initially) and coordinates customers, scheduling, payments, and delivery logistics.
-
-The core differentiator is software/scheduling/AI, NOT the coffee. The defining flow is **automatic recurring orders**: the night before, the user is notified of tomorrow's coffee and can modify or skip; if they do nothing, the order is auto-processed and paid at a cutoff time.
+The single-vendor MVP is complete and preserved at tag `v1.0-single-vendor` and on `main`. v2 is **additive + refactor**, not a rewrite. Do not duplicate logic — extend the existing code.
 
 ---
 
-## Tech Stack (locked — do not substitute)
+## What's Changing (v1 → v2)
 
-- **Frontend:** Next.js (App Router) + React + TypeScript. Tailwind CSS for styling.
-- **Mobile:** Capacitor wrapping the same web build. (Added in a later phase — build web-first.)
-- **Hosting/backend:** Vercel (serverless functions / Next.js API routes + Vercel Cron).
-- **Database:** MongoDB Atlas (use Mongoose or the official driver with a typed data layer).
-- **Auth:** Auth0.
-- **Payments/subscriptions:** Stripe (Billing for recurring subscriptions; PaymentIntents for per-order capture).
-- **Push notifications:** Firebase Cloud Messaging (FCM).
-- **Scheduled jobs:** Vercel Cron.
-- **Maps/geocoding:** Google Maps Platform.
+v1: I make all the coffee. Everything implicitly belongs to me.
+
+v2: The app is a **marketplace** between existing coffee businesses (vendors) and subscribers who want a customized coffee every day. I become the platform operator. My own coffee operation becomes **Vendor #1** — no special-casing; I am just the first vendor.
+
+The two highest-risk, highest-complexity additions are:
+1. **Order routing engine** — deciding which vendor fulfills each subscriber's daily order.
+2. **Stripe Connect + payouts** — split payments between platform and vendors.
+
+Everything else is comparatively mechanical. Treat those two with extra care and tests.
+
+---
+
+## Two Locked Product Decisions
+
+1. **Menu model: standardized platform taxonomy.** The platform defines the canonical option set (drinks, sizes, milks, add-ons, strength). Vendors map their offerings onto this taxonomy and set their own prices/availability. Subscriber preferences reference the **taxonomy**, never a single vendor's menu — this is what makes auto-orders portable when a subscriber is routed to a different vendor.
+
+2. **Vendor selection: hybrid.** For each subscriber:
+   - They can **pick a preferred vendor** manually, OR
+   - The **AI assistant** recommends a vendor based on a short questionnaire (e.g. priorities: proximity, price, speed, rating, specific drink quality).
+   - The user reviews the selection, **can edit it**, then confirms. Only after confirmation does it take effect.
+   - A confirmed preferred vendor is used by routing when available; platform auto-routing is the fallback when that vendor is full/offline/out of area/can't make the drink.
+
+---
+
+## Tech Stack (unchanged from v1 unless noted)
+
+- **Frontend:** Next.js (App Router) + React + TypeScript + Tailwind.
+- **Mobile:** Capacitor (same web build).
+- **Hosting:** Vercel (serverless + Vercel Cron).
+- **DB:** MongoDB Atlas.
+- **Auth:** Auth0 (now with vendor + admin roles).
+- **Payments:** Stripe — **add Stripe Connect** for vendor payouts.
+- **Push:** Firebase Cloud Messaging.
+- **Maps/geocoding:** Google Maps Platform (now also used for vendor service-area + routing distance).
 - **SMS:** Twilio.
 - **Email:** Resend.
-- **Storage (if needed):** Vercel Blob.
-- **Error monitoring:** Sentry.
+- **Storage:** Vercel Blob (vendor logos, menu images).
+- **Monitoring:** Sentry.
 
-### Conventions
-- TypeScript everywhere. Strict mode on.
-- Validate all external input with Zod. Never trust client data on subscription/order/payment routes.
-- Keep secrets in environment variables only. Never commit `.env`. Maintain a `.env.example`.
-- All money in integer minor units (sen), currency `MYR`.
-- All scheduling logic in a single timezone-aware module. Default timezone `Asia/Kuala_Lumpur`. Store timestamps in UTC.
-- Server-authoritative state: the client can request changes, but order generation, cutoff enforcement, and payment capture happen server-side only.
+### Conventions (carried from v1)
+- TypeScript strict. Zod-validate all external input.
+- Money in integer minor units (sen), `MYR`.
+- Timestamps UTC in DB; convert at edges. Default tz `Asia/Kuala_Lumpur`.
+- Server-authoritative: routing, cutoff, payment capture, and payouts are server-only.
+- Idempotency keys on all cron-triggered and payment/payout actions. Never double-charge, double-generate, or double-pay.
 
 ---
 
-## Data Model (target — refine as you build)
+## Data Model Changes
 
-- **User** — Auth0 `sub`, name, email, phone, role (`individual` | `corporate` | `student` | `admin`), default delivery prefs, FCM tokens[].
-- **Location** — userId, label (Home/Office), address, geocoded lat/lng, notes.
-- **Preference** — userId, default drink, size, milk, sugar, strength, schedule (days + time), default locationId.
-- **Subscription** — userId, plan (`lite` | `weekday` | `premium`), Stripe subscription id, status, quota/used counters, billing period.
-- **Order** — userId, date, drink spec (snapshot), locationId snapshot, cafeId, status (`scheduled` | `confirmed` | `preparing` | `out_for_delivery` | `delivered` | `skipped` | `failed`), Stripe paymentIntent id, cutoff time, autoGenerated flag.
-- **Cafe** — name, address, lat/lng, capabilities, capacity, portal users.
-- **Delivery** — orderId, riderId (stub for MVP), status, timestamps.
-- **CorporateAccount** — company, billing owner, member userIds[], seat count.
-- **PreferenceSignal** (AI groundwork) — userId, date, context (weekday, weather, location type), chosen drink. Append-only log feeding later recommendations.
+**New entities**
+- **Vendor** — businessName, ownerUserId, status (`pending` | `active` | `paused` | `suspended` | `offline`), address, geocoded lat/lng, serviceAreaRadius (or polygon), operatingHours, capacity (daily cap + optional per-slot caps), stripeConnectAccountId, commissionRateOverride (nullable → falls back to platform default), ratingScore, acceptanceRate, onTimeRate.
+- **OptionTaxonomy** (platform-level, seeded) — canonical drinks, sizes, milks, add-ons, strength levels. The single source of truth subscriber preferences point to.
+- **VendorMenuItem** — vendorId, taxonomyRef, price, availability toggle, optional image. Maps a vendor's offering onto the taxonomy.
+- **VendorPayout** — vendorId, period, gross, commission, net, stripeTransferId, status, statement data.
+- **CommissionConfig** — platform default rate; per-vendor overrides live on Vendor.
+- **Rating** — orderId, userId, vendorId, score, comment → aggregates into Vendor.ratingScore.
+
+**Modified entities (scope to vendor)**
+- **Order** — add `vendorId`, `assignmentMethod` (`user_preferred` | `ai_routed` | `reassigned`), accept/reject status + window, `commissionAmount`, `vendorNetAmount`. Drink spec now references taxonomy.
+- **Preference** — drink/size/milk/etc. reference **OptionTaxonomy**, not hardcoded values. Add `preferredVendorId` (nullable) + `vendorSelectionMethod` (`manual` | `ai`).
+- **Cafe (v1)** → **fold into Vendor.** Migrate existing café/portal records to Vendor #1.
+
+**Migration note:** Phase A is where v1 and v2 data diverge. Write it as a clean, tested, reversible migration. After it runs, there is no separate "v1 data" — there is one app with Vendor #1.
 
 ---
 
 ## Phases
 
-### Phase 0 — Project Setup
-- Initialize Next.js + TypeScript + Tailwind. ESLint + Prettier.
-- Set up MongoDB Atlas connection with a singleton client (avoid connection storms in serverless).
-- Add `.env.example` with every key needed (Auth0, Stripe, FCM, Google Maps, Twilio, Resend, Mongo URI, Sentry DSN).
-- Wire Sentry for client + server.
-- Define the data model as typed schemas. Set up a `/lib` layer for db access.
-- **Deliverable:** app boots, connects to DB, deploys to Vercel.
+### Phase A — Multi-Tenancy Groundwork
+- Introduce `Vendor`. Scope existing menu/order/capacity/portal data to a `vendorId`.
+- Migrate my own operation + existing café-portal records to **Vendor #1**.
+- No user-facing change yet. Verify v1 flows still work end-to-end with one vendor.
+- **Deliverable:** the existing app runs unchanged, now internally vendor-scoped.
 
-### Phase 1 — Auth & User Onboarding
-- Integrate Auth0 (login, logout, session, protected routes).
-- Onboarding flow: capture name, phone, role.
-- Location management: add Home + Office, geocode via Google Maps Platform, store lat/lng.
-- Preference setup: drink, size, milk, sugar, strength, delivery days, delivery time, default location.
-- **Deliverable:** a user can sign up and fully configure their profile.
+### Phase B — Vendor Onboarding + Portal Shell
+- Vendor application flow (business info, location, hours, capacity) → status `pending`.
+- Admin review → approve/reject → `active`.
+- Auth0 vendor role; vendor login scoped to their Vendor.
+- Vendor profile, operating hours, service-area (radius/polygon via Google Maps), status controls.
+- **Deliverable:** a new vendor can apply, be approved, and log into their portal.
 
-### Phase 2 — Subscriptions & Payments
-- Stripe products/prices for Lite (RM149), Weekday (RM199), Premium (RM299) — confirm amounts with me before hardcoding.
-- Checkout → create Stripe subscription. Handle webhooks (`customer.subscription.*`, `invoice.*`) idempotently.
-- Subscription status, quota tracking, pause/resume, cancel.
-- Stripe customer linked to User.
-- **Deliverable:** user can buy, pause, resume, and cancel a plan; status reflected in app.
+### Phase C — Standardized Taxonomy + Vendor Menus
+- Seed **OptionTaxonomy** (canonical drinks/sizes/milks/add-ons/strength).
+- Vendor menu management: map offerings to taxonomy, set prices, availability toggles, optional images.
+- Refactor subscriber **Preference** to reference taxonomy (migrate v1 hardcoded prefs).
+- **Deliverable:** vendors publish standardized menus; subscriber prefs are taxonomy-based and portable.
 
-### Phase 3 — Order Engine (the core)
-This is the highest-complexity phase. Build and test it carefully.
-- **Order generation job (Vercel Cron, runs daily):** for each active subscription whose schedule includes tomorrow, create a `scheduled` Order snapshotting current preferences + location + assigned café.
-- **Notification:** after generation, send FCM push + (optionally) Resend email: "Tomorrow's coffee is a Flat White delivered to TECZO Office at 8:00 AM."
-- **Modification window:** user can change drink/strength/milk/sugar, change location, or skip — until the cutoff time.
-- **Cutoff job (Vercel Cron):** at cutoff, lock the order, capture payment via Stripe (or decrement prepaid quota depending on plan model — confirm with me), mark `confirmed`. Skipped orders are not charged.
-- Idempotency everywhere: jobs must be safe to re-run; never double-charge or double-generate. Use a unique key per (userId, date).
-- **Deliverable:** end-to-end automatic daily order with working modify/skip/cutoff/charge.
+### Phase D — Vendor Selection + Routing Engine (critical)
+- **Subscriber selection UI (hybrid):**
+  - Manual: browse/select a preferred vendor in their area.
+  - AI: short questionnaire (priorities — proximity, price, speed, rating, drink) → recommend a vendor.
+  - Show selection → user can edit → confirm. Effective only after confirm.
+- **Routing engine** (wire into existing daily order-generation + cutoff jobs):
+  - If a confirmed preferred vendor exists and is available (in-area, within hours, under capacity, can make the drink) → assign it.
+  - Else auto-route to best available vendor by proximity + capacity + hours + menu coverage (+ rating tiebreak).
+  - Vendor accept/reject window; on reject or timeout → reassign.
+  - Record `assignmentMethod` and snapshot vendor + price at confirmation.
+- Idempotent: one order per (userId, date); safe to re-run jobs.
+- **Build with tests before moving on.**
+- **Deliverable:** each subscriber gets a vendor-assigned daily order via preferred-or-AI selection, with reassignment fallback.
 
-### Phase 4 — Café Portal
-- Café login (Auth0 role `cafe`, scoped to a Cafe).
-- View upcoming/confirmed orders, preparation schedule, mark `preparing` → ready.
-- Confirm completion (handoff to delivery).
-- **Deliverable:** cafés can see and fulfill the day's orders.
+### Phase E — Stripe Connect + Payouts (critical)
+- Onboard vendors as Stripe **connected accounts** (Stripe handles KYC/bank — do not store payout details).
+- Split payment per order: subscriber charged → platform commission retained → vendor net transferred.
+- Commission config: platform default + per-vendor override.
+- Payout scheduling, vendor earnings view, statements, payout history.
+- Refund/chargeback routing (reverse transfers correctly).
+- Verify all webhooks with signing secret; handle duplicate/out-of-order events idempotently.
+- **Deliverable:** money flows correctly from subscriber → platform + vendor, with statements and refunds.
 
-### Phase 5 — Delivery Tracking (MVP-light)
-- Delivery records and status transitions. Rider assignment can be a manual/stub step for MVP.
-- Customer-facing status on the dashboard ("preparing", "out for delivery", "delivered").
-- Optional Twilio SMS on `out_for_delivery` / `delivered`.
-- **Deliverable:** customer sees live-ish order status; optional SMS fires.
+### Phase F — Capacity & Lightweight Inventory
+- Daily order caps + optional per-slot caps per vendor (feeds routing availability).
+- "Sold out today" / per-item unavailable toggles.
+- Order-accepting cutoff per vendor.
+- (Defer true ingredient-level inventory unless vendors request it.)
+- **Deliverable:** vendors control load; routing respects capacity and availability.
 
-### Phase 6 — Admin Portal
-- Manage users, cafés, subscriptions, payments, deliveries.
-- Operational dashboards: today's orders, failures, café load.
-- Manual overrides (refund, reassign café, force-skip).
-- **Deliverable:** an operator can run the business from one screen.
+### Phase G — Ratings, SLAs, Vendor Quality
+- Post-delivery rating → aggregate into Vendor.ratingScore.
+- Track acceptanceRate + onTimeRate; surface in vendor portal.
+- Feed quality signals into routing tiebreaks; auto-throttle/flag poor performers.
+- **Deliverable:** quality scoring that improves routing and flags bad vendors.
 
-### Phase 7 — Corporate & Student Tiers
-- Corporate accounts: billing owner, seat management, members under one subscription, weekday-wide delivery.
-- Student plan: discounted pricing, eligibility flag.
-- **Deliverable:** B2B and student onboarding + billing work.
-
-### Phase 8 — AI Preference Learning
-- Log `PreferenceSignal` on every order (already capturing from Phase 3 — make sure it's populated).
-- Phase 8a (rules): detect patterns (Mondays → Double Espresso; rainy days → Hot Latte) and surface suggestions in the night-before notification.
-- Phase 8b (predictive): "You usually order a Mocha on rainy mornings — switch tomorrow?" Integrate weather signal via an external API.
-- Routine detection: WFH days, travel cadence → suggest location/schedule adjustments.
-- Keep this advisory only — never auto-change an order without user confirmation.
-- **Deliverable:** accurate, increasingly personalized suggestions; no surprise changes.
-
-### Phase 9 — Mobile (Capacitor) & Hardening
-- Wrap the web app with Capacitor; configure iOS/Android.
-- Native push (FCM via Capacitor), native geolocation, deep links.
-- App store assets and build pipeline.
-- Load/security review of order + payment paths.
-- **Deliverable:** installable iOS/Android apps backed by the same codebase.
-
-### Phase 10 — Upselling & Future (optional)
-- Add-ons (pastries, snacks, seasonal drinks) at the modification step.
-- Health tracking (caffeine/sugar/calorie insights) as opt-in.
+### Phase H — Admin Expansion
+- Approve/suspend vendors; set commission (default + overrides).
+- Routing health dashboard (reassignment rate, vendor load, failures).
+- Dispute tools, manual order reassignment, manual refunds.
+- **Deliverable:** operator can run the marketplace from the admin portal.
 
 ---
 
 ## Critical Rules for Claude Code
 
-1. **Never double-charge or double-generate orders.** Idempotency keys on all cron-triggered and payment actions.
-2. **Cutoff and payment capture are server-only.** Do not let the client decide what gets charged.
-3. **Confirm before hardcoding prices, plan rules, or cutoff times** — these are business decisions; ask me.
-4. **Snapshot order details** (drink, price, location) at confirmation. Don't read live preferences after an order is locked.
-5. **All times in UTC in the DB; convert at the edges.** Scheduling bugs are the #1 risk here.
-6. **Verify Stripe webhooks** with signing secret; handle out-of-order/duplicate events.
-7. Write the order engine (Phase 3) with tests before moving on.
-8. Don't introduce new infrastructure or swap any stack component without asking.
+1. **Never double-charge, double-generate, or double-pay.** Idempotency keys on all cron + payment + payout actions.
+2. **Routing, cutoff, payment capture, and payouts are server-only.** Clients request; the server decides.
+3. **Subscriber preferences reference the taxonomy, never a single vendor's menu.** This keeps auto-orders portable across vendors.
+4. **Snapshot vendor, drink spec, and price at order confirmation.** Don't read live menus/preferences after lock.
+5. **Vendor selection takes effect only after the user confirms.** AI recommendations and manual picks are both editable pre-confirm; never silently change a confirmed selection.
+6. **My own operation is just Vendor #1.** No special-case branches for "the platform's own coffee."
+7. **Stripe Connect:** never store vendor bank/KYC data; let Stripe handle it. Reverse transfers correctly on refund.
+8. **Phase A migration must be clean, tested, and reversible.** This is where v1 and v2 data diverge.
+9. **Confirm with me before hardcoding** commission rates, capacity defaults, routing weightings, or cutoff times — business decisions.
+10. Don't swap or add infrastructure without asking.
 
 ---
 
 ## Build Order Reminder
-0 → 1 → 2 → **3 (carefully)** → 4 → 5 → 6 → 7 → 8 → 9 → 10.
-Phase 3 is the heart of the product. If anything is shaky, it's there.
+A → B → C → **D (carefully)** → **E (carefully)** → F → G → H.
+D (routing) and E (Connect/payouts) carry almost all the risk. If anything is shaky, it's there.
