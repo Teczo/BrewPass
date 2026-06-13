@@ -5,6 +5,8 @@ export * from "@/lib/models/preference";
 export * from "@/lib/models/subscription";
 export * from "@/lib/models/order";
 export * from "@/lib/models/vendor";
+export * from "@/lib/models/option-taxonomy";
+export * from "@/lib/models/vendor-menu-item";
 export * from "@/lib/models/delivery";
 export * from "@/lib/models/corporate-account";
 export * from "@/lib/models/preference-signal";

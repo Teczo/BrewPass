@@ -168,6 +168,9 @@ export default async function VendorPortalPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Link href="/vendor/menu" className="text-sm text-amber-800 hover:underline">
+            Menu
+          </Link>
           <Link href="/vendor/profile" className="text-sm text-amber-800 hover:underline">
             Profile &amp; hours
           </Link>

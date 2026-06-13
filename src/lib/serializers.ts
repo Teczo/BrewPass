@@ -1,4 +1,12 @@
-import type { Location, Order, Preference, Subscription, User, Vendor } from "@/lib/models";
+import type {
+  Location,
+  Order,
+  Preference,
+  Subscription,
+  User,
+  Vendor,
+  VendorMenuItem,
+} from "@/lib/models";
 
 /** JSON-safe shapes sent to the client (ObjectIds and Dates stringified). */
 
@@ -84,9 +92,21 @@ export function vendorToJson(vendor: Vendor) {
   };
 }
 
+export function vendorMenuItemToJson(item: VendorMenuItem) {
+  return {
+    id: item._id.toHexString(),
+    category: item.category,
+    taxonomySlug: item.taxonomySlug,
+    available: item.available,
+    priceSen: item.priceSen ?? null,
+    imageUrl: item.imageUrl ?? null,
+  };
+}
+
 export type UserJson = ReturnType<typeof userToJson>;
 export type SubscriptionJson = ReturnType<typeof subscriptionToJson>;
 export type OrderJson = ReturnType<typeof orderToJson>;
 export type LocationJson = ReturnType<typeof locationToJson>;
 export type PreferenceJson = ReturnType<typeof preferenceToJson>;
 export type VendorJson = ReturnType<typeof vendorToJson>;
+export type VendorMenuItemJson = ReturnType<typeof vendorMenuItemToJson>;

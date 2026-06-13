@@ -4,6 +4,8 @@ import { PreferencesForm } from "@/components/preferences-form";
 import { StepIndicator } from "@/components/step-indicator";
 import { locationsCollection, preferencesCollection } from "@/lib/collections";
 import { locationToJson, preferenceToJson } from "@/lib/serializers";
+import { drinkOptionsFrom, loadActiveTaxonomy } from "@/lib/taxonomy";
+import { DEFAULT_DRINK_OPTIONS } from "@/lib/taxonomy-options";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
 // Session-dependent: must render per-request, never be statically prerendered.
@@ -17,9 +19,10 @@ export default async function OnboardingPreferencesPage() {
     locationsCollection(),
     preferencesCollection(),
   ]);
-  const [locationDocs, preference] = await Promise.all([
+  const [locationDocs, preference, taxonomy] = await Promise.all([
     locations.find({ userId: user._id }).sort({ createdAt: 1 }).toArray(),
     preferences.findOne({ userId: user._id }),
+    loadActiveTaxonomy(),
   ]);
 
   // Need at least one location to pick a default — back to step 2.
@@ -32,6 +35,7 @@ export default async function OnboardingPreferencesPage() {
         locations={locationDocs.map(locationToJson)}
         initial={preference ? preferenceToJson(preference) : null}
         nextHref="/dashboard"
+        options={drinkOptionsFrom(taxonomy) ?? DEFAULT_DRINK_OPTIONS}
       />
     </section>
   );

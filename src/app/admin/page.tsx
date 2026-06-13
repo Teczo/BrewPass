@@ -8,7 +8,11 @@ import {
   type AdminUserRow,
   type AdminVendorRow,
 } from "@/components/admin-panels";
-import { AdminMigrateButton, AdminSetupButton } from "@/components/admin-setup-button";
+import {
+  AdminMigrateButton,
+  AdminSeedTaxonomyButton,
+  AdminSetupButton,
+} from "@/components/admin-setup-button";
 import { getCurrentAdmin } from "@/lib/admin";
 import { getSession } from "@/lib/auth0";
 import {
@@ -140,6 +144,7 @@ export default async function AdminPage() {
         <div className="flex items-center gap-3">
           <AdminSetupButton />
           <AdminMigrateButton />
+          <AdminSeedTaxonomyButton />
           <a href="/auth/logout" className="text-sm text-neutral-500 hover:underline">
             Log out
           </a>

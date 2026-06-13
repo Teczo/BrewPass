@@ -4,20 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { LocationJson, PreferenceJson } from "@/lib/serializers";
+import { DEFAULT_DRINK_OPTIONS, ensureOption, type DrinkOptions } from "@/lib/taxonomy-options";
 
-const DRINK_SUGGESTIONS = [
-  "Flat White",
-  "Latte",
-  "Cappuccino",
-  "Americano",
-  "Long Black",
-  "Mocha",
-  "Espresso",
-  "Cold Brew",
-];
-const SIZES = ["small", "regular", "large"] as const;
-const MILKS = ["Fresh milk", "Oat", "Almond", "Soy", "None"];
-const STRENGTHS = ["mild", "regular", "strong", "double"] as const;
 const WEEKDAYS = [
   { value: 1, label: "Mon" },
   { value: 2, label: "Tue" },
@@ -32,15 +20,30 @@ export interface PreferencesFormProps {
   locations: LocationJson[];
   initial: PreferenceJson | null;
   nextHref: string;
+  /** Canonical options from the platform taxonomy; falls back to the
+   * built-in defaults when the page doesn't supply them. */
+  options?: DrinkOptions;
 }
 
-export function PreferencesForm({ locations, initial, nextHref }: PreferencesFormProps) {
+export function PreferencesForm({
+  locations,
+  initial,
+  nextHref,
+  options = DEFAULT_DRINK_OPTIONS,
+}: PreferencesFormProps) {
   const router = useRouter();
-  const [drink, setDrink] = useState(initial?.defaultDrink.drink ?? "Flat White");
+  const [drink, setDrink] = useState(initial?.defaultDrink.drink ?? options.drinks[0]?.value ?? "");
   const [size, setSize] = useState<string>(initial?.defaultDrink.size ?? "regular");
-  const [milk, setMilk] = useState(initial?.defaultDrink.milk ?? "Fresh milk");
+  const [milk, setMilk] = useState(initial?.defaultDrink.milk ?? options.milks[0]?.value ?? "");
   const [sugar, setSugar] = useState(initial?.defaultDrink.sugar ?? 0);
   const [strength, setStrength] = useState<string>(initial?.defaultDrink.strength ?? "regular");
+
+  // A saved preference may reference a value the active taxonomy no longer
+  // lists; keep it selectable so editing never silently changes the drink.
+  const drinks = ensureOption(options.drinks, drink);
+  const sizes = ensureOption(options.sizes, size);
+  const milks = ensureOption(options.milks, milk);
+  const strengths = ensureOption(options.strengths, strength);
   const [days, setDays] = useState<number[]>(initial?.schedule.days ?? [1, 2, 3, 4, 5]);
   const [time, setTime] = useState(initial?.schedule.time ?? "08:00");
   const [locationId, setLocationId] = useState(
@@ -84,18 +87,18 @@ export function PreferencesForm({ locations, initial, nextHref }: PreferencesFor
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1 text-sm font-medium">
         Your usual drink
-        <input
+        <select
           className="rounded-md border border-neutral-300 px-3 py-2"
-          list="drink-suggestions"
           value={drink}
           onChange={(e) => setDrink(e.target.value)}
           required
-        />
-        <datalist id="drink-suggestions">
-          {DRINK_SUGGESTIONS.map((suggestion) => (
-            <option key={suggestion} value={suggestion} />
+        >
+          {drinks.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
           ))}
-        </datalist>
+        </select>
       </label>
 
       <div className="grid grid-cols-2 gap-4">
@@ -106,9 +109,9 @@ export function PreferencesForm({ locations, initial, nextHref }: PreferencesFor
             value={size}
             onChange={(e) => setSize(e.target.value)}
           >
-            {SIZES.map((option) => (
-              <option key={option} value={option}>
-                {option}
+            {sizes.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -120,9 +123,9 @@ export function PreferencesForm({ locations, initial, nextHref }: PreferencesFor
             value={milk}
             onChange={(e) => setMilk(e.target.value)}
           >
-            {MILKS.map((option) => (
-              <option key={option} value={option}>
-                {option}
+            {milks.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -148,9 +151,9 @@ export function PreferencesForm({ locations, initial, nextHref }: PreferencesFor
             value={strength}
             onChange={(e) => setStrength(e.target.value)}
           >
-            {STRENGTHS.map((option) => (
-              <option key={option} value={option}>
-                {option}
+            {strengths.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>

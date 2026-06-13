@@ -10,6 +10,8 @@ import { formatMyr } from "@/lib/format";
 import { summarizeHealth } from "@/lib/health";
 import { PLANS } from "@/lib/plans";
 import { locationToJson, orderToJson } from "@/lib/serializers";
+import { drinkOptionsFrom, loadActiveTaxonomy } from "@/lib/taxonomy";
+import { DEFAULT_DRINK_OPTIONS } from "@/lib/taxonomy-options";
 import { addDaysLocal, localDateOf } from "@/lib/time";
 import { getOnboardingStatus, getOrCreateCurrentUser } from "@/lib/users";
 
@@ -133,6 +135,7 @@ export default async function DashboardPage() {
           order={orderToJson(upcomingOrder)}
           locations={locationDocs.map(locationToJson)}
           addOnOptions={addOnOptions}
+          drinkOptions={drinkOptionsFrom(await loadActiveTaxonomy()) ?? DEFAULT_DRINK_OPTIONS}
         />
       )}
 
