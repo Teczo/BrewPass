@@ -59,16 +59,18 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 ## Data Model Changes
 
 **New entities**
-- **Vendor** — businessName, ownerUserId, status (`pending` | `active` | `paused` | `suspended` | `offline`), address, geocoded lat/lng, serviceAreaRadius (or polygon), operatingHours, capacity (daily cap + optional per-slot caps), stripeConnectAccountId, commissionRateOverride (nullable → falls back to platform default), ratingScore, acceptanceRate, onTimeRate.
+- **Vendor** — businessName, ownerUserId, status (`pending` | `active` | `paused` | `suspended` | `offline`), address, geocoded lat/lng, serviceAreaRadius (or polygon), operatingHours, capacity (daily cap + optional per-slot caps), stripeConnectAccountId, commissionRateOverride (nullable → falls back to platform default), **payoutCadence (`per_order` | `daily_batch`, default `daily_batch`)**, ratingScore, acceptanceRate, onTimeRate.
 - **OptionTaxonomy** (platform-level, seeded) — canonical drinks, sizes, milks, add-ons, strength levels. The single source of truth subscriber preferences point to.
 - **VendorMenuItem** — vendorId, taxonomyRef, price, availability toggle, optional image. Maps a vendor's offering onto the taxonomy.
-- **VendorPayout** — vendorId, period, gross, commission, net, stripeTransferId, status, statement data.
+- **VendorPayout** — vendorId, period, gross, commission, net, stripeTransferId, status, statement data. Always released **post-delivery**; `payoutCadence` only controls how often held funds are swept to the vendor.
 - **CommissionConfig** — platform default rate; per-vendor overrides live on Vendor.
 - **Rating** — orderId, userId, vendorId, score, comment → aggregates into Vendor.ratingScore.
+- **MonthlyList** — userId, period (month), status (`proposed` | `confirmed`), generationMethod (`ai` | `manual`), array of planned daily entries (date → taxonomy drink spec + assigned vendorId). The confirmed list is the source from which scheduled daily Orders are created.
 
 **Modified entities (scope to vendor)**
-- **Order** — add `vendorId`, `assignmentMethod` (`user_preferred` | `ai_routed` | `reassigned`), accept/reject status + window, `commissionAmount`, `vendorNetAmount`. Drink spec now references taxonomy.
+- **Order** — add `vendorId`, `monthlyListId`, `assignmentMethod` (`user_preferred` | `ai_routed` | `reassigned`), accept/reject status + window, `commissionAmount`, `vendorNetAmount`, `chargeStatus`, `payoutStatus`, `stripeChargeId`, `stripeTransferId`. Drink spec references taxonomy. State machine: `scheduled → confirmed(charged) → preparing → out_for_delivery → delivered(payout released)` / `failed(refunded)` / `skipped(not charged)`.
 - **Preference** — drink/size/milk/etc. reference **OptionTaxonomy**, not hardcoded values. Add `preferredVendorId` (nullable) + `vendorSelectionMethod` (`manual` | `ai`).
+- **User/Subscription** — saved Stripe payment method (card validated at signup, not charged upfront). Optional `walletBalance` field reserved for a possible future prepaid model (do not build wallet logic yet).
 - **Cafe (v1)** → **fold into Vendor.** Migrate existing café/portal records to Vendor #1.
 
 **Migration note:** Phase A is where v1 and v2 data diverge. Write it as a clean, tested, reversible migration. After it runs, there is no separate "v1 data" — there is one app with Vendor #1.
@@ -110,14 +112,48 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 - **Build with tests before moving on.**
 - **Deliverable:** each subscriber gets a vendor-assigned daily order via preferred-or-AI selection, with reassignment fallback.
 
-### Phase E — Stripe Connect + Payouts (critical)
-- Onboard vendors as Stripe **connected accounts** (Stripe handles KYC/bank — do not store payout details).
-- Split payment per order: subscriber charged → platform commission retained → vendor net transferred.
-- Commission config: platform default + per-vendor override.
-- Payout scheduling, vendor earnings view, statements, payout history.
-- Refund/chargeback routing (reverse transfers correctly).
+### Phase D.5 — Monthly List (AI selection → confirm → scheduled orders)
+This sits between selection/routing and payments. It is how the user "chooses once a month."
+- **AI generates a proposed monthly list:** for each delivery day in the period, propose a drink (taxonomy) + assigned vendor, using the hybrid selection logic from Phase D (preferred vendor where set, AI-routed otherwise).
+- **User reviews the full month:** can edit any day (swap vendor, change drink, skip a day), then **confirms** the list.
+- **On confirm:** persist as individual **scheduled daily Orders**, one per delivery day, each carrying its `vendorId` and `monthlyListId`. The existing daily generation/cutoff jobs operate on these.
+- Users can still edit individual upcoming days after confirming (until that day's cutoff) — reuse the existing modification-window logic.
+- **Deliverable:** user confirms one monthly list; the system has a full month of scheduled, vendor-assigned daily orders requiring zero daily interaction.
+
+### Phase E — Stripe Connect, Per-Day Charging & Delivery-Gated Payouts (critical)
+
+**User charging model — per-day auto-charge (NOT monthly upfront).**
+The user's pain point is choosing/approving daily, not being charged daily. Per-day charging is invisible to the user and avoids the refund/reconciliation mess of charging a variable month upfront.
+- At signup: validate + save the card (Stripe SetupIntent / saved payment method). No upfront charge.
+- At **each day's cutoff:** charge the user for that one coffee into the **platform balance**, lock the order (`confirmed`/charged). Fully automatic — the user does nothing daily.
+- Do **NOT** transfer to the vendor at this point. Funds are held in the platform balance.
+- Optionally surface a **monthly statement/summary** for the "one monthly payment" feel — without actually charging upfront.
+- Do **not** offer the user a daily-vs-monthly charge toggle. If true prepaid is ever wanted, implement it as a **prepaid wallet** (top up → daily orders draw down → rollover/refund), never direct full-month card charges with mid-month adjustments. Deferred for now.
+
+**Money mechanism — separate charges and transfers (the "hold then release").**
+- Charge the user into the platform balance at cutoff (above).
+- Create the Stripe **transfer** to the vendor's connected account **only after delivery is confirmed**, net of commission.
+- This holds the vendor's share until the day's coffee is delivered — the Grab/Uber model. Use separate charges and transfers, not card auth holds (card authorizations expire in ~7 days and don't fit daily recurring orders).
+
+**Vendor payout cadence — vendor's choice.**
+- Vendors choose `payoutCadence` in their portal: `per_order` (transfer per completed delivery) or `daily_batch` (sweep the day's held, delivered funds once). Default `daily_batch` (fewer transfers, lower fees for the platform).
+- Cadence only changes *how often held funds are swept*, never *whether* payout is delivery-gated. No delivery → no payout, regardless of cadence.
+- Do not auto-assign cadence by vendor size/popularity — let vendors choose. Tiering can come later if real demand appears.
+
+**Connect, commission, refunds.**
+- Onboard vendors as Stripe **connected accounts** (Stripe handles KYC/bank — never store payout details).
+- Commission: platform default + per-vendor override, retained on transfer.
+- Vendor earnings view, statements, payout history.
+- **Refund / no-show handling:** delivery fails → no transfer; refund or credit the user for that day. Delivered then disputed → refund user and **reverse the transfer** from the vendor (Stripe transfer reversal).
 - Verify all webhooks with signing secret; handle duplicate/out-of-order events idempotently.
-- **Deliverable:** money flows correctly from subscriber → platform + vendor, with statements and refunds.
+
+**Edge cases to design now:**
+- Vendor goes offline for days a user pre-assigned → routing reassigns; charge/payout follow the new vendor; notify user.
+- User edits a day after confirming → cancel that scheduled order, regenerate; no charge until its own cutoff.
+- User joins mid-month → list + charging start from join date.
+- Failed card at daily cutoff → decide policy (retry / skip-and-notify / pause).
+
+- **Deliverable:** per-day auto-charge at cutoff into platform balance; vendor paid (per-order or batched, their choice) only after delivery; correct refunds and transfer reversals.
 
 ### Phase F — Capacity & Lightweight Inventory
 - Daily order caps + optional per-slot caps per vendor (feeds routing availability).
@@ -142,19 +178,21 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 
 ## Critical Rules for Claude Code
 
-1. **Never double-charge, double-generate, or double-pay.** Idempotency keys on all cron + payment + payout actions.
-2. **Routing, cutoff, payment capture, and payouts are server-only.** Clients request; the server decides.
-3. **Subscriber preferences reference the taxonomy, never a single vendor's menu.** This keeps auto-orders portable across vendors.
-4. **Snapshot vendor, drink spec, and price at order confirmation.** Don't read live menus/preferences after lock.
-5. **Vendor selection takes effect only after the user confirms.** AI recommendations and manual picks are both editable pre-confirm; never silently change a confirmed selection.
-6. **My own operation is just Vendor #1.** No special-case branches for "the platform's own coffee."
-7. **Stripe Connect:** never store vendor bank/KYC data; let Stripe handle it. Reverse transfers correctly on refund.
-8. **Phase A migration must be clean, tested, and reversible.** This is where v1 and v2 data diverge.
-9. **Confirm with me before hardcoding** commission rates, capacity defaults, routing weightings, or cutoff times — business decisions.
-10. Don't swap or add infrastructure without asking.
+1. **Never double-charge, double-generate, double-pay, or double-refund.** Idempotency keys on all cron + charge + transfer + refund actions, keyed per (orderId, action).
+2. **Routing, cutoff, charging, payouts, and refunds are server-only.** Clients request; the server decides.
+3. **Charge the user per-day at cutoff into the platform balance; never charge the full month upfront.** The user does nothing daily — charging is invisible. Any "monthly" feel is a statement/summary or a future prepaid wallet, never upfront card charges with mid-month adjustments.
+4. **Vendor payout is always delivery-gated.** No delivery → no transfer. `payoutCadence` (per_order vs daily_batch) only controls sweep frequency, never whether payout happens. Use separate charges and transfers, not card auth holds.
+5. **Subscriber preferences and monthly lists reference the taxonomy, never a single vendor's menu.** Keeps auto-orders portable across vendors and reassignment.
+6. **Snapshot vendor, drink spec, and price at order confirmation / list confirmation.** Don't read live menus/preferences after lock.
+7. **Vendor selection and the monthly list take effect only after the user confirms.** Both AI and manual are editable pre-confirm; never silently change a confirmed selection or list.
+8. **My own operation is just Vendor #1.** No special-case branches.
+9. **Stripe Connect:** never store vendor bank/KYC data. Reverse transfers correctly on refund/dispute.
+10. **Phase A migration must be clean, tested, and reversible.** This is where v1 and v2 data diverge.
+11. **Confirm with me before hardcoding** commission rates, capacity defaults, routing weightings, cutoff times, or failed-card policy — business decisions.
+12. Don't swap or add infrastructure without asking.
 
 ---
 
 ## Build Order Reminder
-A → B → C → **D (carefully)** → **E (carefully)** → F → G → H.
-D (routing) and E (Connect/payouts) carry almost all the risk. If anything is shaky, it's there.
+A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G → H.
+D (routing) and E (charging/payouts) carry almost all the risk. If anything is shaky, it's there. D.5 (monthly list) is what makes "choose once a month" real and feeds scheduled orders into E.
