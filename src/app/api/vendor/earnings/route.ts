@@ -23,13 +23,19 @@ export async function GET() {
       .aggregate<{
         net: number;
         count: number;
-      }>([{ $match: { vendorId, status: "delivered", payoutStatus: "pending" } }, { $group: { _id: null, net: { $sum: "$vendorNetAmountSen" }, count: { $sum: 1 } } }])
+      }>([
+        { $match: { vendorId, status: "delivered", payoutStatus: "pending" } },
+        { $group: { _id: null, net: { $sum: "$vendorNetAmountSen" }, count: { $sum: 1 } } },
+      ])
       .toArray(),
     payouts
       .aggregate<{
         net: number;
         count: number;
-      }>([{ $match: { vendorId, status: "paid" } }, { $group: { _id: null, net: { $sum: "$netSen" }, count: { $sum: 1 } } }])
+      }>([
+        { $match: { vendorId, status: "paid" } },
+        { $group: { _id: null, net: { $sum: "$netSen" }, count: { $sum: 1 } } },
+      ])
       .toArray(),
     payouts.find({ vendorId }).sort({ createdAt: -1 }).limit(20).toArray(),
   ]);
