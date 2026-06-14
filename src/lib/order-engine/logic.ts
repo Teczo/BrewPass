@@ -53,25 +53,6 @@ export function distanceKm(a: GeoPoint, b: GeoPoint): number {
   return 2 * 6371 * Math.asin(Math.sqrt(h));
 }
 
-/**
- * Closest active vendor to the delivery point, or null when none exist.
- * Phase A stopgap — the Phase D routing engine (preferred vendor, capacity,
- * hours, menu coverage) replaces this.
- */
-export function nearestVendor(vendors: Vendor[], point: GeoPoint): Vendor | null {
-  let best: Vendor | null = null;
-  let bestDistance = Infinity;
-  for (const vendor of vendors) {
-    if (vendor.status !== "active") continue;
-    const distance = distanceKm(vendor.geo, point);
-    if (distance < bestDistance) {
-      best = vendor;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
 /** Assemble the order document: a full snapshot of drink, location, and
  * vendor at generation time (critical rule #4 — never re-read live prefs). */
 export function buildOrder(args: {
@@ -79,10 +60,12 @@ export function buildOrder(args: {
   preference: Preference;
   location: Location;
   vendor: Vendor;
+  /** How routing chose the vendor (Phase D). */
+  assignmentMethod: Order["assignmentMethod"];
   localDate: string;
   now: Date;
 }): Order {
-  const { subscription, preference, location, vendor, localDate, now } = args;
+  const { subscription, preference, location, vendor, assignmentMethod, localDate, now } = args;
   return {
     _id: new ObjectId(),
     userId: subscription.userId,
@@ -97,6 +80,7 @@ export function buildOrder(args: {
       ...(location.notes ? { notes: location.notes } : {}),
     },
     vendorId: vendor._id,
+    assignmentMethod,
     status: "scheduled",
     cutoffAt: cutoffInstantFor(localDate),
     deliverAt: utcInstantOfLocal(localDate, preference.schedule.time),

@@ -166,6 +166,12 @@ export default async function DashboardPage() {
                 {preference.schedule.time}
               </p>
               {defaultLocation && <p>Delivered to {defaultLocation.label}</p>}
+              <Link
+                href="/dashboard/vendor"
+                className="mt-2 inline-block text-amber-800 hover:underline"
+              >
+                Choose your vendor →
+              </Link>
             </div>
           ) : (
             <p className="mt-2 text-sm text-neutral-500">Not set yet.</p>
