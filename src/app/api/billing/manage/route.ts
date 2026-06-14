@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getCurrentSubscription, syncSubscriptionFromStripe } from "@/lib/billing";
+import { subscriptionsCollection } from "@/lib/collections";
+import type { SubscriptionStatus } from "@/lib/models";
 import { getStripe } from "@/lib/stripe";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
@@ -38,6 +40,37 @@ export async function POST(request: Request) {
       { error: "Your plan is managed by your company's billing owner." },
       { status: 409 },
     );
+  }
+
+  // Card-on-file memberships (Phase E) have no recurring Stripe subscription
+  // to mutate — manage status on our record directly. Cancel is immediate
+  // (nothing was prepaid); the saved card simply stops being charged.
+  if (subscription.billingMode === "card_on_file") {
+    const nextStatus: Record<string, SubscriptionStatus> = {
+      pause: "paused",
+      resume: "active",
+      cancel: "canceled",
+      reactivate: "active",
+    };
+    const status = nextStatus[parsed.data.action];
+    const subscriptions = await subscriptionsCollection();
+    await subscriptions.updateOne(
+      { _id: subscription._id },
+      {
+        $set: {
+          status,
+          cancelAtPeriodEnd: parsed.data.action === "cancel",
+          updatedAt: new Date(),
+        },
+      },
+    );
+    return NextResponse.json({
+      subscription: {
+        plan: subscription.plan,
+        status,
+        cancelAtPeriodEnd: parsed.data.action === "cancel",
+      },
+    });
   }
 
   const stripe = getStripe();
