@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
 import { sendSms } from "@/lib/notifications";
+import { handleOrderDelivered } from "@/lib/payments/payout";
 import { getCurrentVendorContext } from "@/lib/vendors";
 
 export const runtime = "nodejs";
@@ -103,6 +104,16 @@ export async function POST(request: Request, context: RouteContext) {
       { _id: order._id, status: "out_for_delivery" },
       { $set: { status: "delivered", updatedAt: now } },
     );
+
+    // Phase E: release the vendor's payout now that delivery is confirmed
+    // (delivery-gated, rule #4). Best-effort — a per_order transfer hiccup
+    // leaves the order `pending` for the daily sweep to retry; it must never
+    // block the delivery transition.
+    try {
+      await handleOrderDelivered(order._id, now);
+    } catch (error) {
+      console.error(`Payout on delivery for order ${order._id.toHexString()} failed:`, error);
+    }
 
     // Optional SMS — best-effort, never blocks the transition.
     const users = await usersCollection();
