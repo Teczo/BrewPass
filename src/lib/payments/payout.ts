@@ -1,10 +1,6 @@
 import { ObjectId } from "mongodb";
 
-import {
-  ordersCollection,
-  vendorPayoutsCollection,
-  vendorsCollection,
-} from "@/lib/collections";
+import { ordersCollection, vendorPayoutsCollection, vendorsCollection } from "@/lib/collections";
 import type { Order, Vendor } from "@/lib/models";
 import { buildPayoutBatch, type PayoutLine } from "@/lib/payments/money";
 import { getStripe } from "@/lib/stripe";
@@ -61,7 +57,10 @@ function effectiveCadence(vendor: Vendor): "per_order" | "daily_batch" {
  * `payoutStatus: pending` and leaves the money for the sweep. Safe to call
  * more than once per order (idempotent transfer key + payable guard).
  */
-export async function handleOrderDelivered(orderId: ObjectId, now: Date = new Date()): Promise<void> {
+export async function handleOrderDelivered(
+  orderId: ObjectId,
+  now: Date = new Date(),
+): Promise<void> {
   const orders = await ordersCollection();
   const order = await orders.findOne({ _id: orderId });
   if (!order || !isPayable(order)) return;
@@ -128,12 +127,17 @@ export async function sweepDailyBatchPayouts(
     const vendor = await vendors.findOne({ _id: vendorId });
     if (!vendor) continue;
     if (!vendorCanReceive(vendor)) {
-      summary.skipped.push({ vendorId: vendorId.toHexString(), reason: "vendor_not_connect_ready" });
+      summary.skipped.push({
+        vendorId: vendorId.toHexString(),
+        reason: "vendor_not_connect_ready",
+      });
       continue;
     }
 
     const payable = (
-      await orders.find({ vendorId, date: localDate, status: "delivered", payoutStatus: "pending" }).toArray()
+      await orders
+        .find({ vendorId, date: localDate, status: "delivered", payoutStatus: "pending" })
+        .toArray()
     ).filter(isPayable);
     if (payable.length === 0) continue;
 
@@ -157,6 +161,40 @@ export async function sweepDailyBatchPayouts(
     }
   }
   return summary;
+}
+
+/**
+ * Reverse a paid-out transfer (Phase E) — used when a delivered order is
+ * disputed/refunded. Reclaims the vendor's net from their connected account
+ * and marks the order + payout `reversed`. Idempotent via `reversal_<orderId>`
+ * and the paid-status guard.
+ */
+export async function reverseOrderTransfer(
+  orderId: ObjectId,
+  now: Date = new Date(),
+): Promise<void> {
+  const orders = await ordersCollection();
+  const order = await orders.findOne({ _id: orderId });
+  if (!order || order.payoutStatus !== "paid" || !order.stripeTransferId) return;
+  if (typeof order.vendorNetAmountSen !== "number" || order.vendorNetAmountSen <= 0) return;
+
+  await getStripe().transfers.createReversal(
+    order.stripeTransferId,
+    { amount: order.vendorNetAmountSen, metadata: { orderId: orderId.toHexString() } },
+    { idempotencyKey: `reversal_${orderId.toHexString()}` },
+  );
+
+  await orders.updateOne(
+    { _id: orderId },
+    { $set: { payoutStatus: "reversed" as const, updatedAt: now } },
+  );
+  if (order.vendorPayoutId) {
+    const payouts = await vendorPayoutsCollection();
+    await payouts.updateOne(
+      { _id: order.vendorPayoutId },
+      { $set: { status: "reversed" as const, updatedAt: now } },
+    );
+  }
 }
 
 interface TransferOutcome {
@@ -183,10 +221,7 @@ async function transferBatch(args: {
   const batch = buildPayoutBatch(lines);
   if (batch.netSen <= 0) return { ok: true, netSen: 0 };
 
-  const [orders, payouts] = await Promise.all([
-    ordersCollection(),
-    vendorPayoutsCollection(),
-  ]);
+  const [orders, payouts] = await Promise.all([ordersCollection(), vendorPayoutsCollection()]);
   const accountId = vendor.stripeConnectAccountId!;
 
   // Upsert the payout record. daily_batch is unique per (vendor, period); a

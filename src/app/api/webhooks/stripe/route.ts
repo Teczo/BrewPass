@@ -5,6 +5,8 @@ import type Stripe from "stripe";
 import { activateCardOnFileMembership, syncSubscriptionFromStripe } from "@/lib/billing";
 import { webhookEventsCollection } from "@/lib/collections";
 import { requireEnv } from "@/lib/env";
+import { applyAccountStatus } from "@/lib/payments/connect";
+import { handleChargeDispute } from "@/lib/payments/refund";
 import { PLANS } from "@/lib/plans";
 import { getStripe } from "@/lib/stripe";
 
@@ -17,6 +19,9 @@ const HANDLED_EVENTS = new Set([
   "customer.subscription.deleted",
   "invoice.paid",
   "invoice.payment_failed",
+  // Phase E — Connect onboarding status + dispute handling.
+  "account.updated",
+  "charge.dispute.created",
 ]);
 
 /** Activate a card-on-file membership from a completed setup Checkout
@@ -116,6 +121,30 @@ export async function POST(request: Request) {
   try {
     if (event.type === "checkout.session.completed") {
       await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      return NextResponse.json({ received: true });
+    }
+
+    // Phase E: Connect account capability changes → refresh the vendor's
+    // charges/payouts-enabled flags (gates payouts).
+    if (event.type === "account.updated") {
+      const account = event.data.object as Stripe.Account;
+      await applyAccountStatus(
+        account.id,
+        Boolean(account.charges_enabled),
+        Boolean(account.payouts_enabled),
+      );
+      return NextResponse.json({ received: true });
+    }
+
+    // Phase E: a disputed coffee charge → reverse the vendor transfer (if
+    // paid) and mark the order refunded.
+    if (event.type === "charge.dispute.created") {
+      const dispute = event.data.object as Stripe.Dispute;
+      const paymentIntentId =
+        typeof dispute.payment_intent === "string"
+          ? dispute.payment_intent
+          : dispute.payment_intent?.id;
+      if (paymentIntentId) await handleChargeDispute(paymentIntentId);
       return NextResponse.json({ received: true });
     }
 

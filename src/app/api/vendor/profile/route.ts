@@ -22,6 +22,9 @@ const updateProfileSchema = z
     /** Self-service status: operational states only — suspension and the
      * application states are owned by admin review (vendor-rules.ts). */
     status: z.enum(["active", "paused", "offline"]).optional(),
+    /** Phase E: how often delivered funds are swept to the vendor (their
+     * choice; never gates whether payout happens). */
+    payoutCadence: z.enum(["per_order", "daily_batch"]).optional(),
   })
   .refine((input) => Object.values(input).some((value) => value !== undefined), {
     message: "nothing to update",
@@ -50,6 +53,7 @@ export async function PATCH(request: Request) {
   if (input.serviceAreaRadiusKm !== undefined)
     updates.serviceAreaRadiusKm = input.serviceAreaRadiusKm;
   if (input.status !== undefined) updates.status = input.status;
+  if (input.payoutCadence !== undefined) updates.payoutCadence = input.payoutCadence;
 
   if (input.address !== undefined) {
     const geocoded = await geocodeAddress(input.address);
