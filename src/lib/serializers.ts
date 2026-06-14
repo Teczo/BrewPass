@@ -1,5 +1,6 @@
 import type {
   Location,
+  MonthlyList,
   Order,
   Preference,
   Subscription,
@@ -103,7 +104,36 @@ export function vendorMenuItemToJson(item: VendorMenuItem) {
   };
 }
 
+/**
+ * Serialize a monthly list for the planner UI. `vendorNames` maps vendor id
+ * (hex) → business name so each day can show its assigned vendor.
+ */
+export function monthlyListToJson(list: MonthlyList, vendorNames: Map<string, string>) {
+  return {
+    id: list._id.toHexString(),
+    period: list.period,
+    status: list.status,
+    generationMethod: list.generationMethod,
+    time: list.time,
+    location: { label: list.location.label, address: list.location.address },
+    entries: list.entries.map((entry) => {
+      const vendorId = entry.vendorId?.toHexString() ?? null;
+      return {
+        date: entry.date,
+        weekday: entry.weekday,
+        drink: entry.drink,
+        vendorId,
+        vendorName: vendorId ? (vendorNames.get(vendorId) ?? null) : null,
+        assignmentMethod: entry.assignmentMethod,
+        priceSen: entry.priceSen ?? null,
+        skipped: entry.skipped,
+      };
+    }),
+  };
+}
+
 export type UserJson = ReturnType<typeof userToJson>;
+export type MonthlyListJson = ReturnType<typeof monthlyListToJson>;
 export type SubscriptionJson = ReturnType<typeof subscriptionToJson>;
 export type OrderJson = ReturnType<typeof orderToJson>;
 export type LocationJson = ReturnType<typeof locationToJson>;

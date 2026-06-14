@@ -11,6 +11,7 @@ import {
 } from "@/lib/collections";
 import type { Order } from "@/lib/models";
 import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
+import { loadSkippedUserIdsForDate } from "@/lib/monthly-list/service";
 import { buildOrder, evaluateCutoff, evaluateGeneration } from "@/lib/order-engine/logic";
 import {
   loadRoutingCandidates,
@@ -50,9 +51,13 @@ export async function generateOrdersForDate(
     ordersCollection(),
   ]);
 
-  const [candidateSubs, routingCandidates] = await Promise.all([
+  const [candidateSubs, routingCandidates, skippedUserIds] = await Promise.all([
     subscriptions.find({ status: { $in: ["active", "trialing"] } }).toArray(),
     loadRoutingCandidates(localDate),
+    // Phase D.5: days a user explicitly skipped in a confirmed monthly list
+    // must never get an auto-generated order. Days the list already filled
+    // are protected by the unique (userId, date) order index instead.
+    loadSkippedUserIdsForDate(localDate),
   ]);
   // Mutated in place as orders are assigned, so per-vendor capacity holds
   // across the whole run.
@@ -65,6 +70,12 @@ export async function generateOrdersForDate(
 
   for (const subscription of candidateSubs) {
     const subId = subscription._id.toHexString();
+
+    if (skippedUserIds.has(subscription.userId.toHexString())) {
+      summary.skipped.push({ subscriptionId: subId, reason: "skipped_in_monthly_list" });
+      continue;
+    }
+
     const preference = await preferences.findOne({ userId: subscription.userId });
 
     const decision = evaluateGeneration(subscription, preference, localDate);

@@ -44,6 +44,12 @@ export const orderSchema = baseDocumentSchema.extend({
   /** Fulfilling vendor (v1 cafeId, renamed in the Phase A migration). */
   vendorId: objectIdSchema,
   /**
+   * The confirmed monthly list this order was created from (Phase D.5).
+   * Unset for orders generated directly by the nightly job (users without a
+   * confirmed list, or fallback days the planner couldn't pre-assign).
+   */
+  monthlyListId: objectIdSchema.optional(),
+  /**
    * How `vendorId` was chosen (Phase D routing). `user_preferred` = the
    * subscriber's confirmed preferred vendor; `ai_routed` = platform
    * auto-routing; `reassigned` = re-routed after a vendor declined.
