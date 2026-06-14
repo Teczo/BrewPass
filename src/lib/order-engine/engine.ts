@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 
 import { addOnsTotalSen } from "@/lib/addons";
+import { vendorDrinkPriceSen } from "@/lib/menu";
 import {
   locationsCollection,
   ordersCollection,
@@ -8,6 +9,7 @@ import {
   preferenceSignalsCollection,
   subscriptionsCollection,
   usersCollection,
+  vendorsCollection,
 } from "@/lib/collections";
 import type { Order } from "@/lib/models";
 import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
@@ -18,6 +20,9 @@ import {
   selectVendor,
   type RoutingCandidate,
 } from "@/lib/order-engine/routing-data";
+import { chargeOrderCoffee } from "@/lib/payments/charge";
+import { resolveCommissionBps } from "@/lib/payments/commission";
+import { splitOrderAmount } from "@/lib/payments/money";
 import { getStripe } from "@/lib/stripe";
 import { pickSuggestion } from "@/lib/suggestions";
 import { formatLocalTime12h, isoWeekdayOf, localTimeOf } from "@/lib/time";
@@ -117,6 +122,8 @@ export async function generateOrdersForDate(
       location,
       vendor: candidate.vendor,
       assignmentMethod: result.method,
+      // Snapshot the vendor's price for the cutoff charge (Phase E).
+      priceSen: vendorDrinkPriceSen(candidate.menuItems, preference!.defaultDrink.drink),
       localDate,
       now,
     });
@@ -291,17 +298,37 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
     const decision = evaluateCutoff(subscription);
 
     let confirmed = false;
+    let failReason: string | null = null;
     if (decision.action === "confirm") {
-      // Guarded decrement: only while the plan is live and quota remains.
-      const result = await subscriptions.updateOne(
-        {
-          _id: order.subscriptionId,
-          status: { $in: ["active", "trialing"] },
-          $expr: { $lt: ["$quota.used", "$quota.total"] },
-        },
-        { $inc: { "quota.used": 1 }, $set: { updatedAt: now } },
-      );
-      confirmed = result.modifiedCount === 1;
+      if (subscription?.billingMode === "card_on_file") {
+        // Phase E: charge the coffee per-day into the platform balance (the
+        // vendor is paid only after delivery). No quota gate — pay per coffee.
+        // On failure (retry-once-then-skip; rule #3) the order fails uncharged.
+        const outcome = await chargeConfirmedCoffee(order, now);
+        confirmed = outcome.ok;
+        if (!outcome.ok) {
+          await orders.updateOne(
+            { _id: order._id },
+            { $set: { chargeStatus: "failed" as const, updatedAt: now } },
+          );
+          failReason = `charge_failed: ${outcome.reason}`;
+        }
+      } else {
+        // Prepaid (corporate/legacy): guarded decrement, only while the plan
+        // is live and quota remains. No per-coffee charge.
+        const result = await subscriptions.updateOne(
+          {
+            _id: order.subscriptionId,
+            status: { $in: ["active", "trialing"] },
+            $expr: { $lt: ["$quota.used", "$quota.total"] },
+          },
+          { $inc: { "quota.used": 1 }, $set: { updatedAt: now } },
+        );
+        confirmed = result.modifiedCount === 1;
+        if (!confirmed) failReason = "quota_exhausted";
+      }
+    } else {
+      failReason = decision.reason;
     }
 
     if (confirmed) {
@@ -340,7 +367,7 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
         if (!isDuplicateKeyError(error)) throw error;
       }
     } else {
-      const reason = decision.action === "fail" ? decision.reason : "quota_exhausted";
+      const reason = failReason ?? "quota_exhausted";
       await orders.updateOne(
         { _id: order._id },
         {
@@ -352,6 +379,74 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
     }
   }
   return summary;
+}
+
+export interface CoffeeChargeOutcome {
+  ok: boolean;
+  reason?: string;
+}
+
+/**
+ * Charge a confirmed card-on-file order for its coffee (Phase E) and, on
+ * success, snapshot the commission split onto the order. The charge lands in
+ * the platform balance; the vendor's net is transferred only after delivery.
+ *
+ * A missing/zero price (vendor hasn't published one) is not a card failure —
+ * we confirm the order without charging and leave chargeStatus unset, so no
+ * payout is ever released for an uncharged coffee. The caller treats only a
+ * real charge failure as a reason to fail the order.
+ */
+async function chargeConfirmedCoffee(order: Order, now: Date): Promise<CoffeeChargeOutcome> {
+  const amountSen = order.priceSen ?? 0;
+  if (amountSen <= 0) {
+    console.warn(`Order ${order._id.toHexString()} has no price; confirming without charge.`);
+    return { ok: true };
+  }
+
+  const [users, vendors, orders] = await Promise.all([
+    usersCollection(),
+    vendorsCollection(),
+    ordersCollection(),
+  ]);
+  const [user, vendor] = await Promise.all([
+    users.findOne({ _id: order.userId }),
+    vendors.findOne({ _id: order.vendorId }),
+  ]);
+
+  const customerId = user?.stripeCustomerId;
+  const paymentMethodId = user?.defaultPaymentMethodId;
+  if (!customerId || !paymentMethodId) {
+    return { ok: false, reason: "no_saved_card" };
+  }
+  if (!vendor) return { ok: false, reason: "vendor_missing" };
+
+  const result = await chargeOrderCoffee({
+    orderId: order._id.toHexString(),
+    customerId,
+    paymentMethodId,
+    amountSen,
+    drinkName: order.drink.drink,
+  });
+  if (!result.ok) return { ok: false, reason: result.reason };
+
+  // Snapshot the split at charge time (critical rule #6) — payout reads these,
+  // never a live commission rate.
+  const commissionBps = await resolveCommissionBps(vendor);
+  const split = splitOrderAmount(amountSen, commissionBps);
+  await orders.updateOne(
+    { _id: order._id },
+    {
+      $set: {
+        chargeStatus: "charged" as const,
+        stripeChargeId: result.paymentIntentId,
+        chargedAt: now,
+        commissionAmountSen: split.commissionSen,
+        vendorNetAmountSen: split.vendorNetSen,
+        updatedAt: now,
+      },
+    },
+  );
+  return { ok: true };
 }
 
 /**

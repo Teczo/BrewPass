@@ -55,6 +55,7 @@ export async function loadRoutingCandidates(localDate: string): Promise<RoutingC
       category: item.category,
       taxonomySlug: item.taxonomySlug,
       available: item.available,
+      ...(item.priceSen !== undefined ? { priceSen: item.priceSen } : {}),
     });
     itemsByVendor.set(key, list);
   }

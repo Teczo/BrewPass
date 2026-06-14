@@ -45,7 +45,9 @@ export function splitOrderAmount(grossSen: number, commissionBps: number): Money
     throw new Error(`grossSen must be a non-negative integer, got ${grossSen}`);
   }
   if (!Number.isInteger(commissionBps) || commissionBps < 0 || commissionBps > BPS_DENOMINATOR) {
-    throw new Error(`commissionBps must be an integer in [0, ${BPS_DENOMINATOR}], got ${commissionBps}`);
+    throw new Error(
+      `commissionBps must be an integer in [0, ${BPS_DENOMINATOR}], got ${commissionBps}`,
+    );
   }
   const commissionSen = Math.floor((grossSen * commissionBps) / BPS_DENOMINATOR);
   return {
