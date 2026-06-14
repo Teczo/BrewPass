@@ -4,6 +4,7 @@ export * from "@/lib/models/location";
 export * from "@/lib/models/preference";
 export * from "@/lib/models/subscription";
 export * from "@/lib/models/order";
+export * from "@/lib/models/monthly-list";
 export * from "@/lib/models/vendor";
 export * from "@/lib/models/option-taxonomy";
 export * from "@/lib/models/vendor-menu-item";

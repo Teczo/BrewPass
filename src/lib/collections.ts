@@ -6,6 +6,7 @@ import type {
   Delivery,
   Location,
   OptionTaxonomy,
+  MonthlyList,
   Order,
   Preference,
   PreferenceSignal,
@@ -40,6 +41,10 @@ export async function ordersCollection(): Promise<Collection<Order>> {
 
 export async function vendorsCollection(): Promise<Collection<Vendor>> {
   return (await getDb()).collection<Vendor>("vendors");
+}
+
+export async function monthlyListsCollection(): Promise<Collection<MonthlyList>> {
+  return (await getDb()).collection<MonthlyList>("monthlyLists");
 }
 
 export async function optionTaxonomyCollection(): Promise<Collection<OptionTaxonomy>> {
@@ -78,6 +83,7 @@ export async function ensureIndexes(): Promise<void> {
     subscriptions,
     orders,
     vendors,
+    monthlyLists,
     taxonomy,
     menuItems,
     deliveries,
@@ -90,6 +96,7 @@ export async function ensureIndexes(): Promise<void> {
     subscriptionsCollection(),
     ordersCollection(),
     vendorsCollection(),
+    monthlyListsCollection(),
     optionTaxonomyCollection(),
     vendorMenuItemsCollection(),
     deliveriesCollection(),
@@ -108,6 +115,11 @@ export async function ensureIndexes(): Promise<void> {
     orders.createIndex({ userId: 1, date: 1 }, { unique: true }),
     orders.createIndex({ vendorId: 1, date: 1 }),
     orders.createIndex({ status: 1, cutoffAt: 1 }),
+    // One monthly list per user per period; generation upserts on this key.
+    monthlyLists.createIndex({ userId: 1, period: 1 }, { unique: true }),
+    // Nightly generation looks up confirmed lists for a period to honour
+    // skipped days.
+    monthlyLists.createIndex({ status: 1, period: 1 }),
     // Portal login resolves the operator's vendor by membership.
     vendors.createIndex({ portalUserSubs: 1 }),
     // One vendor (application) per owning user; concurrent applies collide.

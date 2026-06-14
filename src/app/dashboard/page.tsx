@@ -139,6 +139,23 @@ export default async function DashboardPage() {
         />
       )}
 
+      {hasLiveSubscription && (
+        <section className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-4">
+          <div>
+            <h2 className="font-semibold text-amber-900">Plan your month</h2>
+            <p className="text-sm text-amber-800">
+              Pick a coffee and vendor for every day at once, then confirm and forget.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/monthly"
+            className="shrink-0 rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
+          >
+            Plan month →
+          </Link>
+        </section>
+      )}
+
       <HealthCard optedIn={Boolean(user.healthOptInAt)} summary={healthSummary} />
 
       <div className="grid gap-4 sm:grid-cols-2">
