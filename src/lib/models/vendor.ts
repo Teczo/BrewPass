@@ -91,5 +91,25 @@ export const vendorSchema = baseDocumentSchema.extend({
   reviewedAt: z.date().optional(),
   /** Shown to the applicant when their application is rejected. */
   reviewNote: z.string().max(500).optional(),
+  /**
+   * Stripe Connect (Phase E). The connected account holds the vendor's
+   * bank/KYC — we never store payout details ourselves (critical rule #9).
+   * Set on first onboarding; the enabled flags mirror the account's
+   * charges/payouts capabilities from `account.updated` webhooks.
+   */
+  stripeConnectAccountId: z.string().optional(),
+  connectChargesEnabled: z.boolean().optional(),
+  connectPayoutsEnabled: z.boolean().optional(),
+  /**
+   * Per-vendor commission override in basis points (nullable → falls back to
+   * the platform default). Admin-set in Phase H.
+   */
+  commissionRateOverrideBps: z.number().int().min(0).max(10_000).optional(),
+  /**
+   * How often delivered, held funds are swept to the vendor. Unset =
+   * `daily_batch` (the default). Never gates *whether* payout happens — that
+   * is always delivery-gated (critical rule #4).
+   */
+  payoutCadence: z.enum(["per_order", "daily_batch"]).optional(),
 });
 export type Vendor = z.infer<typeof vendorSchema>;

@@ -26,7 +26,19 @@ export const subscriptionSchema = baseDocumentSchema.extend({
   userId: objectIdSchema,
   plan: subscriptionPlanSchema,
   stripeCustomerId: z.string().min(1),
+  /** For card-on-file memberships this is a synthetic key
+   * (`membership:<userId>`); for corporate it is the real Stripe
+   * subscription id. Either way it is unique and indexes the document. */
   stripeSubscriptionId: z.string().min(1),
+  /**
+   * How the subscriber pays for coffee (Phase E):
+   * - `card_on_file`: no upfront/recurring charge; each coffee is charged at
+   *   its own cutoff (individual/student memberships).
+   * - `subscription`: a recurring Stripe subscription prepays a monthly quota
+   *   (corporate seats; legacy v1 plans before migration).
+   * Unset is treated as `subscription` for backward compatibility.
+   */
+  billingMode: z.enum(["card_on_file", "subscription"]).optional(),
   status: subscriptionStatusSchema,
   /** Coffees included vs consumed in the current billing period. */
   quota: z.object({
