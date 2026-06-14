@@ -76,6 +76,16 @@ export const vendorSchema = baseDocumentSchema.extend({
   capacityPerHour: z.number().int().positive(),
   /** Auth0 subs of portal users: the owner plus admin-linked staff. */
   portalUserSubs: z.array(z.string()),
+  /**
+   * Max orders accepted per day, used by routing's capacity check. Unset =
+   * uncapped (full per-slot capacity management arrives in Phase F).
+   */
+  dailyCapacity: z.number().int().positive().optional(),
+  /**
+   * Aggregate rating (1–5), the routing tiebreak. Unset until the vendor
+   * has ratings (Phase G populates and maintains it).
+   */
+  ratingScore: z.number().min(0).max(5).optional(),
   /** Application/review trail (Phase B onboarding). */
   appliedAt: z.date().optional(),
   reviewedAt: z.date().optional(),

@@ -6,6 +6,7 @@ import { getCurrentSubscription } from "@/lib/billing";
 import { locationsCollection, ordersCollection } from "@/lib/collections";
 import type { Order } from "@/lib/models";
 import { orderToJson } from "@/lib/serializers";
+import { findUncoveredDrinkField, loadDrinkValueSets } from "@/lib/taxonomy";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { orderActionSchema } from "@/lib/validation";
 
@@ -53,7 +54,17 @@ export async function PATCH(request: Request, context: RouteContext) {
   } else {
     fromStatus = "scheduled";
     const set: Record<string, unknown> = { modifiedByUserAt: now, updatedAt: now };
-    if (input.drink) set.drink = input.drink;
+    if (input.drink) {
+      // Modified drinks must also reference the taxonomy (critical rule #3).
+      const uncovered = findUncoveredDrinkField(await loadDrinkValueSets(), input.drink);
+      if (uncovered) {
+        return NextResponse.json(
+          { error: `"${uncovered.value}" isn't an available ${uncovered.field} option.` },
+          { status: 422 },
+        );
+      }
+      set.drink = input.drink;
+    }
     if (input.addOnKeys !== undefined) {
       const addOns = resolveAddOns(input.addOnKeys);
       if (!addOns) {

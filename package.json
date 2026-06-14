@@ -16,6 +16,7 @@
     "cap:android": "cap add android"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
     "@auth0/nextjs-auth0": "^4.22.0",
     "@capacitor/app": "^8.1.0",
     "@capacitor/core": "^8.4.0",

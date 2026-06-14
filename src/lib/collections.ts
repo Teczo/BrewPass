@@ -5,12 +5,14 @@ import type {
   CorporateAccount,
   Delivery,
   Location,
+  OptionTaxonomy,
   Order,
   Preference,
   PreferenceSignal,
   Subscription,
   User,
   Vendor,
+  VendorMenuItem,
   WebhookEvent,
 } from "@/lib/models";
 
@@ -38,6 +40,14 @@ export async function ordersCollection(): Promise<Collection<Order>> {
 
 export async function vendorsCollection(): Promise<Collection<Vendor>> {
   return (await getDb()).collection<Vendor>("vendors");
+}
+
+export async function optionTaxonomyCollection(): Promise<Collection<OptionTaxonomy>> {
+  return (await getDb()).collection<OptionTaxonomy>("optionTaxonomy");
+}
+
+export async function vendorMenuItemsCollection(): Promise<Collection<VendorMenuItem>> {
+  return (await getDb()).collection<VendorMenuItem>("vendorMenuItems");
 }
 
 export async function deliveriesCollection(): Promise<Collection<Delivery>> {
@@ -68,6 +78,8 @@ export async function ensureIndexes(): Promise<void> {
     subscriptions,
     orders,
     vendors,
+    taxonomy,
+    menuItems,
     deliveries,
     signals,
     webhooks,
@@ -78,6 +90,8 @@ export async function ensureIndexes(): Promise<void> {
     subscriptionsCollection(),
     ordersCollection(),
     vendorsCollection(),
+    optionTaxonomyCollection(),
+    vendorMenuItemsCollection(),
     deliveriesCollection(),
     preferenceSignalsCollection(),
     webhookEventsCollection(),
@@ -101,6 +115,12 @@ export async function ensureIndexes(): Promise<void> {
       { ownerUserId: 1 },
       { unique: true, partialFilterExpression: { ownerUserId: { $exists: true } } },
     ),
+    // One taxonomy entry per slug within a category; seed/migration upsert
+    // on this key.
+    taxonomy.createIndex({ category: 1, slug: 1 }, { unique: true }),
+    // One menu item per (vendor, taxonomy slug); the menu editor upserts
+    // on this key. Listing a vendor's whole menu uses the prefix.
+    menuItems.createIndex({ vendorId: 1, taxonomySlug: 1 }, { unique: true }),
     deliveries.createIndex({ orderId: 1 }, { unique: true }),
     signals.createIndex({ userId: 1, date: 1 }),
     // One preference signal per confirmed order.

@@ -72,3 +72,27 @@ export function AdminMigrateButton() {
     </button>
   );
 }
+
+/** Seeds the OptionTaxonomy and absorbs legacy preference values (Phase C,
+ * up only — rollback is a deliberate API call). */
+export function AdminSeedTaxonomyButton() {
+  const { state, run } = useAdminAction("/api/admin/migrations/phase-c", { direction: "up" });
+
+  return (
+    <button
+      type="button"
+      onClick={run}
+      disabled={state === "busy"}
+      className={buttonClass}
+      title="Seed the platform menu taxonomy and absorb existing preferences (safe to re-run)"
+    >
+      {state === "busy"
+        ? "Seeding…"
+        : state === "done"
+          ? "Taxonomy ✓"
+          : state === "error"
+            ? "Failed — retry"
+            : "Seed menu taxonomy"}
+    </button>
+  );
+}

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { locationsCollection, preferencesCollection, usersCollection } from "@/lib/collections";
 import { preferenceToJson } from "@/lib/serializers";
+import { findUncoveredDrinkField, loadDrinkValueSets } from "@/lib/taxonomy";
 import { getOnboardingStatus, getOrCreateCurrentUser } from "@/lib/users";
 import { preferenceInputSchema } from "@/lib/validation";
 
@@ -26,6 +27,17 @@ export async function PUT(request: Request) {
     return NextResponse.json(
       { error: "Invalid input", issues: parsed.error.issues },
       { status: 400 },
+    );
+  }
+
+  // The drink must reference the platform taxonomy (critical rule #3).
+  // Fails open per-category when the taxonomy isn't seeded yet.
+  const valueSets = await loadDrinkValueSets();
+  const uncovered = findUncoveredDrinkField(valueSets, parsed.data.defaultDrink);
+  if (uncovered) {
+    return NextResponse.json(
+      { error: `"${uncovered.value}" isn't an available ${uncovered.field} option.` },
+      { status: 422 },
     );
   }
 

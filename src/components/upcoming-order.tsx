@@ -4,10 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { LocationJson, OrderJson } from "@/lib/serializers";
-
-const SIZES = ["small", "regular", "large"] as const;
-const STRENGTHS = ["mild", "regular", "strong", "double"] as const;
-const MILKS = ["Fresh milk", "Oat", "Almond", "Soy", "None"];
+import { DEFAULT_DRINK_OPTIONS, ensureOption, type DrinkOptions } from "@/lib/taxonomy-options";
 
 const STATUS_LABELS: Record<string, string> = {
   scheduled: "Scheduled",
@@ -37,11 +34,14 @@ export function UpcomingOrder({
   order,
   locations,
   addOnOptions = [],
+  drinkOptions = DEFAULT_DRINK_OPTIONS,
 }: {
   order: OrderJson;
   locations: LocationJson[];
   /** Empty when add-ons aren't available (e.g. corporate plans). */
   addOnOptions?: AddOnOption[];
+  /** Canonical drink options from the platform taxonomy. */
+  drinkOptions?: DrinkOptions;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -50,6 +50,12 @@ export function UpcomingOrder({
   const [milk, setMilk] = useState(order.drink.milk);
   const [sugar, setSugar] = useState(order.drink.sugar);
   const [strength, setStrength] = useState<string>(order.drink.strength);
+
+  // Keep the order's current values selectable even if the taxonomy changed.
+  const drinks = ensureOption(drinkOptions.drinks, drink);
+  const sizes = ensureOption(drinkOptions.sizes, size);
+  const milks = ensureOption(drinkOptions.milks, milk);
+  const strengths = ensureOption(drinkOptions.strengths, strength);
   const [locationId, setLocationId] = useState(order.location.locationId);
   const [addOnKeys, setAddOnKeys] = useState<string[]>(order.addOns.map((addOn) => addOn.key));
   const [error, setError] = useState<string | null>(null);
@@ -195,12 +201,18 @@ export function UpcomingOrder({
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-sm font-medium">
               Drink
-              <input
+              <select
                 className="rounded-md border border-neutral-300 px-3 py-2"
                 value={drink}
                 onChange={(e) => setDrink(e.target.value)}
                 required
-              />
+              >
+                {drinks.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="flex flex-col gap-1 text-sm font-medium">
               Size
@@ -209,8 +221,10 @@ export function UpcomingOrder({
                 value={size}
                 onChange={(e) => setSize(e.target.value)}
               >
-                {SIZES.map((option) => (
-                  <option key={option}>{option}</option>
+                {sizes.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -221,8 +235,10 @@ export function UpcomingOrder({
                 value={milk}
                 onChange={(e) => setMilk(e.target.value)}
               >
-                {MILKS.map((option) => (
-                  <option key={option}>{option}</option>
+                {milks.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -233,8 +249,10 @@ export function UpcomingOrder({
                 value={strength}
                 onChange={(e) => setStrength(e.target.value)}
               >
-                {STRENGTHS.map((option) => (
-                  <option key={option}>{option}</option>
+                {strengths.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
                 ))}
               </select>
             </label>

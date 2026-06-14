@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { VendorBoard, type VendorOrderJson } from "@/components/vendor-board";
+import { VendorUpcoming, type UpcomingOrderJson } from "@/components/vendor-upcoming";
 import { getSession } from "@/lib/auth0";
 import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
 import type { Vendor } from "@/lib/models";
@@ -110,7 +111,7 @@ export default async function VendorPortalPage() {
   const tomorrow = tomorrowLocalDate(now);
 
   const orders = await ordersCollection();
-  const [todayDocs, tomorrowCount] = await Promise.all([
+  const [todayDocs, tomorrowDocs] = await Promise.all([
     orders
       .find({
         vendorId: vendor._id,
@@ -119,14 +120,19 @@ export default async function VendorPortalPage() {
       })
       .sort({ deliverAt: 1 })
       .toArray(),
-    orders.countDocuments({ vendorId: vendor._id, date: tomorrow, status: "scheduled" }),
+    orders
+      .find({ vendorId: vendor._id, date: tomorrow, status: "scheduled" })
+      .sort({ deliverAt: 1 })
+      .toArray(),
   ]);
+  const tomorrowCount = tomorrowDocs.length;
 
   const users = await usersCollection();
   const deliveries = await deliveriesCollection();
+  const customerIds = [...todayDocs, ...tomorrowDocs].map((doc) => doc.userId);
   const [customers, deliveryDocs] = await Promise.all([
     users
-      .find({ _id: { $in: todayDocs.map((doc) => doc.userId) } })
+      .find({ _id: { $in: customerIds } })
       .project<{ _id: (typeof todayDocs)[number]["userId"]; name: string }>({ name: 1 })
       .toArray(),
     deliveries.find({ orderId: { $in: todayDocs.map((doc) => doc._id) } }).toArray(),
@@ -146,6 +152,14 @@ export default async function VendorPortalPage() {
       delivery: delivery ? { status: delivery.status, riderId: delivery.riderId ?? null } : null,
     };
   });
+
+  const upcomingOrders: UpcomingOrderJson[] = tomorrowDocs.map((doc) => ({
+    id: doc._id.toHexString(),
+    drinkName: doc.drink.drink,
+    detail: `${doc.drink.size} · ${doc.drink.milk} · ${doc.drink.strength}`,
+    customerName: nameById.get(doc.userId.toHexString()) ?? "Customer",
+    deliverAt: doc.deliverAt.toISOString(),
+  }));
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-6">
@@ -168,6 +182,9 @@ export default async function VendorPortalPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Link href="/vendor/menu" className="text-sm text-amber-800 hover:underline">
+            Menu
+          </Link>
           <Link href="/vendor/profile" className="text-sm text-amber-800 hover:underline">
             Profile &amp; hours
           </Link>
@@ -177,6 +194,7 @@ export default async function VendorPortalPage() {
         </div>
       </header>
       <VendorBoard orders={boardOrders} />
+      <VendorUpcoming orders={upcomingOrders} />
     </main>
   );
 }

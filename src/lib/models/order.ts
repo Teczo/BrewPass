@@ -43,6 +43,15 @@ export const orderSchema = baseDocumentSchema.extend({
   location: orderLocationSnapshotSchema,
   /** Fulfilling vendor (v1 cafeId, renamed in the Phase A migration). */
   vendorId: objectIdSchema,
+  /**
+   * How `vendorId` was chosen (Phase D routing). `user_preferred` = the
+   * subscriber's confirmed preferred vendor; `ai_routed` = platform
+   * auto-routing; `reassigned` = re-routed after a vendor declined.
+   */
+  assignmentMethod: z.enum(["user_preferred", "ai_routed", "reassigned"]).optional(),
+  /** Vendors that declined this order — excluded from re-routing so a
+   * decline can't bounce back to the same vendor. */
+  declinedVendorIds: z.array(objectIdSchema).optional(),
   status: orderStatusSchema,
   /** Price snapshot in sen (MYR). Set when the order is generated/confirmed. */
   priceSen: moneySenSchema.optional(),
