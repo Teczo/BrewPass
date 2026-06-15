@@ -22,6 +22,9 @@ const updateVendorSchema = z.object({
   /** Phase G: lift an auto quality-suspension so routing can use the vendor
    * again (counters are kept; the vendor can rebuild their score). */
   clearQualityFlag: z.literal(true).optional(),
+  /** Phase H: per-vendor commission override in bps (0–10000), or null to
+   * fall back to the platform default. */
+  commissionRateOverrideBps: z.number().int().min(0).max(10_000).nullable().optional(),
 });
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -86,6 +89,18 @@ export async function PATCH(request: Request, context: RouteContext) {
     await vendors.updateOne(
       { _id: vendorId },
       { $unset: { qualitySuspendedAt: "", qualityFlagReason: "" }, $set: { updatedAt: now } },
+    );
+  }
+
+  if (input.commissionRateOverrideBps === null) {
+    await vendors.updateOne(
+      { _id: vendorId },
+      { $unset: { commissionRateOverrideBps: "" }, $set: { updatedAt: now } },
+    );
+  } else if (input.commissionRateOverrideBps !== undefined) {
+    await vendors.updateOne(
+      { _id: vendorId },
+      { $set: { commissionRateOverrideBps: input.commissionRateOverrideBps, updatedAt: now } },
     );
   }
 

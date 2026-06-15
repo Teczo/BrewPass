@@ -4,6 +4,7 @@ import {
   AdminOrdersTable,
   AdminUsers,
   AdminVendors,
+  CommissionPanel,
   type AdminOrderRow,
   type AdminUserRow,
   type AdminVendorRow,
@@ -21,6 +22,8 @@ import {
   usersCollection,
   vendorsCollection,
 } from "@/lib/collections";
+import { getPlatformCommissionBps } from "@/lib/payments/commission";
+import { PLATFORM_DEFAULT_COMMISSION_BPS } from "@/lib/payments/money";
 import { localDateOf } from "@/lib/time";
 
 // Session-dependent: must render per-request, never be statically prerendered.
@@ -51,13 +54,15 @@ export default async function AdminPage() {
     subscriptionsCollection(),
   ]);
 
-  const [todayOrders, vendorDocs, userDocs, activeSubs, totalUsers] = await Promise.all([
-    orders.find({ date: today }).sort({ deliverAt: 1 }).limit(200).toArray(),
-    vendors.find({}).sort({ businessName: 1 }).toArray(),
-    users.find({}).sort({ createdAt: -1 }).limit(100).toArray(),
-    subscriptions.countDocuments({ status: { $in: ["active", "trialing"] } }),
-    users.estimatedDocumentCount(),
-  ]);
+  const [todayOrders, vendorDocs, userDocs, activeSubs, totalUsers, commissionDefaultBps] =
+    await Promise.all([
+      orders.find({ date: today }).sort({ deliverAt: 1 }).limit(200).toArray(),
+      vendors.find({}).sort({ businessName: 1 }).toArray(),
+      users.find({}).sort({ createdAt: -1 }).limit(100).toArray(),
+      subscriptions.countDocuments({ status: { $in: ["active", "trialing"] } }),
+      users.estimatedDocumentCount(),
+      getPlatformCommissionBps(),
+    ]);
 
   const nameById = new Map(userDocs.map((user) => [user._id.toHexString(), user.name]));
   const vendorNameById = new Map(
@@ -97,7 +102,21 @@ export default async function AdminPage() {
     status: order.status,
     deliverAt: order.deliverAt.toISOString(),
     failureReason: order.failureReason ?? null,
+    chargeStatus: order.chargeStatus ?? null,
+    payoutStatus: order.payoutStatus ?? null,
   }));
+
+  // Phase H routing-health metrics over today's orders.
+  const reassignedCount = todayOrders.filter(
+    (order) => order.assignmentMethod === "reassigned",
+  ).length;
+  const reassignmentRate = todayOrders.length > 0 ? reassignedCount / todayOrders.length : 0;
+  const failureReasonCounts = new Map<string, number>();
+  for (const order of failures) {
+    const reason = order.failureReason ?? "unknown";
+    failureReasonCounts.set(reason, (failureReasonCounts.get(reason) ?? 0) + 1);
+  }
+  const suspendedVendors = vendorDocs.filter((vendor) => vendor.qualitySuspendedAt);
 
   const subByEmail = new Map(userDocs.map((user) => [user.authSub, user.name]));
   const vendorRows: AdminVendorRow[] = vendorDocs.map((vendor) => ({
@@ -109,6 +128,13 @@ export default async function AdminPage() {
     reviewNote: vendor.reviewNote ?? null,
     staff: vendor.portalUserSubs.map((sub) => ({ sub, name: subByEmail.get(sub) ?? sub })),
     todayCount: todayCountByVendor.get(vendor._id.toHexString()) ?? 0,
+    ratingScore: vendor.ratingScore ?? null,
+    ratingCount: vendor.ratingCount ?? 0,
+    acceptanceRate: vendor.acceptanceRate ?? null,
+    onTimeRate: vendor.onTimeRate ?? null,
+    qualitySuspended: Boolean(vendor.qualitySuspendedAt),
+    qualityFlagReason: vendor.qualityFlagReason ?? null,
+    commissionOverrideBps: vendor.commissionRateOverrideBps ?? null,
   }));
 
   const userRows: AdminUserRow[] = userDocs.map((user) => ({
@@ -175,6 +201,44 @@ export default async function AdminPage() {
       )}
 
       <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Routing health</h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-md border border-neutral-200 p-4">
+            <p className="text-2xl font-bold">{Math.round(reassignmentRate * 100)}%</p>
+            <p className="text-xs text-neutral-500">
+              reassignment rate ({reassignedCount}/{todayOrders.length})
+            </p>
+          </div>
+          <div className="rounded-md border border-neutral-200 p-4">
+            <p className="text-2xl font-bold">{failures.length}</p>
+            <p className="mt-1 text-xs text-neutral-500">
+              {failureReasonCounts.size === 0
+                ? "no failures"
+                : [...failureReasonCounts.entries()]
+                    .map(([reason, count]) => `${reason}: ${count}`)
+                    .join(" · ")}
+            </p>
+          </div>
+          <div className="rounded-md border border-neutral-200 p-4">
+            <p className="text-2xl font-bold">{suspendedVendors.length}</p>
+            <p className="mt-1 text-xs text-neutral-500">
+              quality-suspended{" "}
+              {suspendedVendors.length > 0 &&
+                `· ${suspendedVendors.map((vendor) => vendor.businessName).join(", ")}`}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Commission</h2>
+        <CommissionPanel
+          defaultRateBps={commissionDefaultBps}
+          codeDefaultBps={PLATFORM_DEFAULT_COMMISSION_BPS}
+        />
+      </section>
+
+      <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Today&apos;s orders</h2>
         <AdminOrdersTable
           orders={orderRows}
@@ -186,7 +250,7 @@ export default async function AdminPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Vendors</h2>
-        <AdminVendors vendors={vendorRows} />
+        <AdminVendors vendors={vendorRows} platformDefaultBps={commissionDefaultBps} />
       </section>
 
       <section className="flex flex-col gap-3">
