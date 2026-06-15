@@ -35,6 +35,54 @@ const STATUS_LABELS: Record<Vendor["status"], string> = {
   offline: "offline",
 };
 
+const SUSPEND_REASON: Record<string, string> = {
+  low_rating: "low ratings",
+  low_acceptance: "a low acceptance rate",
+  low_ontime: "too many late deliveries",
+};
+
+/** Phase G: vendor-facing quality scorecard (rating, acceptance, on-time)
+ * plus the auto-suspension banner when flagged. */
+function VendorQualityStrip({ vendor }: { vendor: Vendor }) {
+  const pct = (value?: number) => (value == null ? "—" : `${Math.round(value * 100)}%`);
+  return (
+    <section className="rounded-md border border-neutral-200 p-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">Quality</h2>
+        {vendor.qualitySuspendedAt && (
+          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+            Paused by quality review
+          </span>
+        )}
+      </div>
+      {vendor.qualitySuspendedAt && (
+        <p className="mt-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+          You&apos;re temporarily not receiving new orders due to{" "}
+          {SUSPEND_REASON[vendor.qualityFlagReason ?? ""] ?? "quality issues"}. Contact support to
+          review.
+        </p>
+      )}
+      <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+        <div>
+          <p className="text-2xl font-bold">
+            {vendor.ratingScore != null ? vendor.ratingScore.toFixed(1) : "—"}
+            <span className="text-base font-normal text-neutral-400">★</span>
+          </p>
+          <p className="text-xs text-neutral-500">{vendor.ratingCount ?? 0} ratings</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold">{pct(vendor.acceptanceRate)}</p>
+          <p className="text-xs text-neutral-500">accepted</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold">{pct(vendor.onTimeRate)}</p>
+          <p className="text-xs text-neutral-500">on time</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default async function VendorPortalPage() {
   const session = await getSession();
   if (!session) redirect("/auth/login?returnTo=/vendor");
@@ -199,6 +247,7 @@ export default async function VendorPortalPage() {
           </a>
         </div>
       </header>
+      <VendorQualityStrip vendor={vendor} />
       <VendorBoard orders={boardOrders} />
       <VendorUpcoming orders={upcomingOrders} />
     </main>

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { ordersCollection } from "@/lib/collections";
 import { loadRoutingCandidates, selectVendor } from "@/lib/order-engine/routing-data";
+import { recordDecline } from "@/lib/quality-service";
 import { isoWeekdayOf, localDateOf, localTimeOf } from "@/lib/time";
 import { getCurrentVendorContext } from "@/lib/vendors";
 
@@ -70,7 +71,7 @@ export async function POST(request: Request, context: RouteContext) {
   const guard = { _id: orderId, vendorId, status: "scheduled" as const, cutoffAt: { $gt: now } };
 
   if (!result.ok) {
-    await orders.updateOne(guard, {
+    const failed = await orders.updateOne(guard, {
       $set: {
         status: "failed",
         failureReason: "vendor_declined_no_alternative",
@@ -78,6 +79,8 @@ export async function POST(request: Request, context: RouteContext) {
         updatedAt: now,
       },
     });
+    // Count the decline only when our claim actually applied (Phase G).
+    if (failed.matchedCount === 1) await recordDecline(vendorId, now);
     return NextResponse.json({ ok: true, reassigned: false });
   }
 
@@ -96,5 +99,6 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
+  await recordDecline(vendorId, now); // Phase G acceptance metric
   return NextResponse.json({ ok: true, reassigned: true });
 }

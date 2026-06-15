@@ -6,6 +6,8 @@ import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/c
 import { sendSms } from "@/lib/notifications";
 import { handleOrderDelivered } from "@/lib/payments/payout";
 import { refundFailedDelivery } from "@/lib/payments/refund";
+import { isOnTime } from "@/lib/quality";
+import { recordDelivery } from "@/lib/quality-service";
 import { getCurrentVendorContext } from "@/lib/vendors";
 
 export const runtime = "nodejs";
@@ -114,6 +116,14 @@ export async function POST(request: Request, context: RouteContext) {
       await handleOrderDelivered(order._id, now);
     } catch (error) {
       console.error(`Payout on delivery for order ${order._id.toHexString()} failed:`, error);
+    }
+
+    // Phase G: record the delivery + whether it met the promised time (+grace)
+    // for the vendor's on-time rate. Best-effort.
+    try {
+      await recordDelivery(order.vendorId, isOnTime(now, order.deliverAt), now);
+    } catch (error) {
+      console.error(`On-time metric for order ${order._id.toHexString()} failed:`, error);
     }
 
     // Optional SMS — best-effort, never blocks the transition.
