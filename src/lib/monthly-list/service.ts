@@ -12,7 +12,7 @@ import type { DrinkSpec, MonthlyList, MonthlyListEntry, Subscription, User } fro
 import { ordersFromList, planMonthlyEntries } from "@/lib/monthly-list/planner";
 import { loadRoutingCandidates } from "@/lib/order-engine/routing-data";
 import { slugify } from "@/lib/taxonomy";
-import { localDateOf, tomorrowLocalDate } from "@/lib/time";
+import { localDateOf, localTimeOf, tomorrowLocalDate } from "@/lib/time";
 
 /** The KL calendar month (YYYY-MM) of a local date. */
 export function periodOf(localDate: string): string {
@@ -117,6 +117,8 @@ export async function proposeMonthlyList(
     point: location.geo,
     preferredVendorId: preference.preferredVendorId ?? null,
     candidates,
+    nowLocalDate: localDateOf(now),
+    nowLocalTime: localTimeOf(now),
     priceFor,
   });
 

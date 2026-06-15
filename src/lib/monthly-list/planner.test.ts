@@ -39,9 +39,18 @@ function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
 
 function makeCandidate(
   vendor: Vendor,
-  extras: { menuItems?: CoverageItem[]; assignedCount?: number } = {},
+  extras: {
+    menuItems?: CoverageItem[];
+    assignedCount?: number;
+    assignedByHour?: Record<number, number>;
+  } = {},
 ): RoutingCandidate {
-  return { vendor, menuItems: extras.menuItems ?? [], assignedCount: extras.assignedCount ?? 0 };
+  return {
+    vendor,
+    menuItems: extras.menuItems ?? [],
+    assignedCount: extras.assignedCount ?? 0,
+    assignedByHour: extras.assignedByHour ?? {},
+  };
 }
 
 describe("enumerateDeliveryDates", () => {
@@ -78,6 +87,10 @@ describe("planMonthlyEntries", () => {
     time: "08:00",
     drink: DRINK,
     point: POINT,
+    // Planning happens "now" (before any planned date), so the accept-cutoff
+    // gate always passes.
+    nowLocalDate: "2026-06-14",
+    nowLocalTime: "12:00",
   };
 
   it("assigns the preferred vendor on every day when it is eligible", () => {

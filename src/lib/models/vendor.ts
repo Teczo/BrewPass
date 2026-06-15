@@ -3,10 +3,29 @@ import { z } from "zod";
 import {
   baseDocumentSchema,
   geoPointSchema,
+  localDateSchema,
   localTimeSchema,
   objectIdSchema,
   weekdaySchema,
 } from "@/lib/models/shared";
+
+/**
+ * Optional per-hour delivery caps (Phase F). Each entry caps orders whose
+ * delivery falls in that KL hour-of-day (0–23); hours without an entry are
+ * limited only by the daily cap. Layered on top of `dailyCapacity`.
+ */
+export const slotCapacitySchema = z
+  .array(
+    z.object({
+      hour: z.number().int().min(0).max(23),
+      cap: z.number().int().nonnegative(),
+    }),
+  )
+  .max(24)
+  .refine((slots) => new Set(slots.map((s) => s.hour)).size === slots.length, {
+    message: "one cap per hour",
+  });
+export type SlotCapacity = z.infer<typeof slotCapacitySchema>;
 
 /**
  * Vendor lifecycle. Application flow: `pending` → admin review →
@@ -81,6 +100,24 @@ export const vendorSchema = baseDocumentSchema.extend({
    * uncapped (full per-slot capacity management arrives in Phase F).
    */
   dailyCapacity: z.number().int().positive().optional(),
+  /**
+   * Per-hour delivery caps (Phase F). Layered under `dailyCapacity`: an order
+   * is only assignable if both its delivery hour's cap and the daily cap have
+   * room. Unset = hours limited only by the daily cap.
+   */
+  slotCapacities: slotCapacitySchema.optional(),
+  /**
+   * Local dates (YYYY-MM-DD) the vendor has marked "sold out" — routing skips
+   * them for that day only. Past dates are pruned on write (Phase F).
+   */
+  soldOutDates: z.array(localDateSchema).optional(),
+  /**
+   * Per-vendor order-accepting cutoff (Phase F): a KL time-of-day after which
+   * the vendor won't take an order *assigned* on the delivery day. Gates
+   * same-day reassignment; night-before generation is always earlier so it is
+   * unaffected. Unset = no extra cutoff (platform cutoff still applies).
+   */
+  orderAcceptCutoff: localTimeSchema.optional(),
   /**
    * Aggregate rating (1–5), the routing tiebreak. Unset until the vendor
    * has ratings (Phase G populates and maintains it).

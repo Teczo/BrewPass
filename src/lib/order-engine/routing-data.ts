@@ -36,13 +36,23 @@ export async function loadRoutingCandidates(localDate: string): Promise<RoutingC
 
   const [items, counts] = await Promise.all([
     menuItems.find({ vendorId: { $in: vendorIds } }).toArray(),
+    // Count per (vendor, KL delivery hour) so routing can enforce both the
+    // daily cap (sum over hours) and per-hour slot caps (Phase F).
     orders
       .aggregate<{
-        _id: ObjectId;
+        _id: { vendorId: ObjectId; hour: number };
         count: number;
       }>([
         { $match: { date: localDate, status: { $in: [...CAPACITY_STATUSES] } } },
-        { $group: { _id: "$vendorId", count: { $sum: 1 } } },
+        {
+          $group: {
+            _id: {
+              vendorId: "$vendorId",
+              hour: { $hour: { date: "$deliverAt", timezone: "Asia/Kuala_Lumpur" } },
+            },
+            count: { $sum: 1 },
+          },
+        },
       ])
       .toArray(),
   ]);
@@ -60,11 +70,21 @@ export async function loadRoutingCandidates(localDate: string): Promise<RoutingC
     itemsByVendor.set(key, list);
   }
 
-  const countByVendor = new Map(counts.map((row) => [row._id.toHexString(), row.count]));
+  // Build per-vendor totals and per-hour breakdowns from the grouped counts.
+  const totalByVendor = new Map<string, number>();
+  const byHourByVendor = new Map<string, Record<number, number>>();
+  for (const row of counts) {
+    const key = row._id.vendorId.toHexString();
+    totalByVendor.set(key, (totalByVendor.get(key) ?? 0) + row.count);
+    const hours = byHourByVendor.get(key) ?? {};
+    hours[row._id.hour] = (hours[row._id.hour] ?? 0) + row.count;
+    byHourByVendor.set(key, hours);
+  }
 
   return activeVendors.map((vendor) => ({
     vendor,
     menuItems: itemsByVendor.get(vendor._id.toHexString()) ?? [],
-    assignedCount: countByVendor.get(vendor._id.toHexString()) ?? 0,
+    assignedCount: totalByVendor.get(vendor._id.toHexString()) ?? 0,
+    assignedByHour: byHourByVendor.get(vendor._id.toHexString()) ?? {},
   }));
 }

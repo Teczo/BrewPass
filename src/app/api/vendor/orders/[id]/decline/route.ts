@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { ordersCollection } from "@/lib/collections";
 import { loadRoutingCandidates, selectVendor } from "@/lib/order-engine/routing-data";
-import { isoWeekdayOf, localTimeOf } from "@/lib/time";
+import { isoWeekdayOf, localDateOf, localTimeOf } from "@/lib/time";
 import { getCurrentVendorContext } from "@/lib/vendors";
 
 export const runtime = "nodejs";
@@ -54,9 +54,13 @@ export async function POST(request: Request, context: RouteContext) {
     {
       preferredVendorId: null, // a decline always re-routes to a different vendor
       point: order.location.geo,
+      date: order.date,
       weekday: isoWeekdayOf(order.date),
       time: localTimeOf(order.deliverAt),
       drink: { drink: order.drink.drink, milk: order.drink.milk },
+      // Same-day reassignment honours each vendor's accept-cutoff (Phase F).
+      nowLocalDate: localDateOf(now),
+      nowLocalTime: localTimeOf(now),
       excludeVendorIds: declinedVendorIds,
     },
     candidates,

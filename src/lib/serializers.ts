@@ -91,6 +91,11 @@ export function vendorToJson(vendor: Vendor) {
     operatingHours: vendor.operatingHours ?? null,
     serviceAreaRadiusKm: vendor.serviceAreaRadiusKm ?? null,
     reviewNote: vendor.reviewNote ?? null,
+    // Phase F capacity controls
+    dailyCapacity: vendor.dailyCapacity ?? null,
+    slotCapacities: vendor.slotCapacities ?? [],
+    orderAcceptCutoff: vendor.orderAcceptCutoff ?? null,
+    soldOutDates: vendor.soldOutDates ?? [],
     // Phase E
     payoutCadence: vendor.payoutCadence ?? "daily_batch",
     connect: {

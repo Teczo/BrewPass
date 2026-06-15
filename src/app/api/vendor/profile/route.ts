@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { vendorsCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
-import { operatingHoursSchema } from "@/lib/models";
+import { localTimeSchema, operatingHoursSchema, slotCapacitySchema } from "@/lib/models";
 import { vendorToJson } from "@/lib/serializers";
 import { canVendorSetStatus } from "@/lib/vendor-rules";
 import { getCurrentVendorContext } from "@/lib/vendors";
@@ -25,6 +25,10 @@ const updateProfileSchema = z
     /** Phase E: how often delivered funds are swept to the vendor (their
      * choice; never gates whether payout happens). */
     payoutCadence: z.enum(["per_order", "daily_batch"]).optional(),
+    /** Phase F capacity controls. null clears the value. */
+    dailyCapacity: z.number().int().positive().nullable().optional(),
+    slotCapacities: slotCapacitySchema.optional(),
+    orderAcceptCutoff: localTimeSchema.nullable().optional(),
   })
   .refine((input) => Object.values(input).some((value) => value !== undefined), {
     message: "nothing to update",
@@ -48,12 +52,20 @@ export async function PATCH(request: Request) {
   }
 
   const updates: Record<string, unknown> = {};
+  const unset: Record<string, ""> = {};
   if (input.businessName !== undefined) updates.businessName = input.businessName;
   if (input.operatingHours !== undefined) updates.operatingHours = input.operatingHours;
   if (input.serviceAreaRadiusKm !== undefined)
     updates.serviceAreaRadiusKm = input.serviceAreaRadiusKm;
   if (input.status !== undefined) updates.status = input.status;
   if (input.payoutCadence !== undefined) updates.payoutCadence = input.payoutCadence;
+  if (input.slotCapacities !== undefined) updates.slotCapacities = input.slotCapacities;
+  // null clears a capacity control; a value sets it.
+  if (input.dailyCapacity === null) unset.dailyCapacity = "";
+  else if (input.dailyCapacity !== undefined) updates.dailyCapacity = input.dailyCapacity;
+  if (input.orderAcceptCutoff === null) unset.orderAcceptCutoff = "";
+  else if (input.orderAcceptCutoff !== undefined)
+    updates.orderAcceptCutoff = input.orderAcceptCutoff;
 
   if (input.address !== undefined) {
     const geocoded = await geocodeAddress(input.address);
@@ -70,7 +82,10 @@ export async function PATCH(request: Request) {
   const vendors = await vendorsCollection();
   const updated = await vendors.findOneAndUpdate(
     { _id: context.vendor._id },
-    { $set: { ...updates, updatedAt: new Date() } },
+    {
+      $set: { ...updates, updatedAt: new Date() },
+      ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
+    },
     { returnDocument: "after" },
   );
   if (!updated) return NextResponse.json({ error: "Vendor not found" }, { status: 404 });

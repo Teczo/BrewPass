@@ -54,6 +54,10 @@ export interface MonthlyPlanInput {
   /** Confirmed preferred vendor, or null to always auto-route. */
   preferredVendorId: ObjectId | null;
   candidates: RoutingCandidate[];
+  /** When the plan is being built, in KL local terms (for the accept-cutoff
+   * gate). All planned dates are in the future, so this always passes. */
+  nowLocalDate: string;
+  nowLocalTime: string;
   /** Vendor price lookup for the drink, in sen. Injected so the planner
    * stays pure (the service layer supplies a menu-backed implementation). */
   priceFor?: (vendorId: ObjectId, drink: DrinkSpec) => number | null;
@@ -71,9 +75,12 @@ export function planMonthlyEntries(input: MonthlyPlanInput): MonthlyListEntry[] 
       {
         preferredVendorId: input.preferredVendorId,
         point: input.point,
+        date,
         weekday: isoWeekdayOf(date),
         time: input.time,
         drink: { drink: input.drink.drink, milk: input.drink.milk },
+        nowLocalDate: input.nowLocalDate,
+        nowLocalTime: input.nowLocalTime,
       },
       input.candidates,
     );
