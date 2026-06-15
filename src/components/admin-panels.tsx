@@ -39,6 +39,9 @@ export interface AdminOrderRow {
   status: string;
   deliverAt: string;
   failureReason: string | null;
+  /** Phase H money state. */
+  chargeStatus: string | null;
+  payoutStatus: string | null;
 }
 
 export interface AdminVendorRow {
@@ -50,6 +53,14 @@ export interface AdminVendorRow {
   reviewNote: string | null;
   staff: Array<{ sub: string; name: string }>;
   todayCount: number;
+  /** Phase H/G quality + commission. */
+  ratingScore: number | null;
+  ratingCount: number;
+  acceptanceRate: number | null;
+  onTimeRate: number | null;
+  qualitySuspended: boolean;
+  qualityFlagReason: string | null;
+  commissionOverrideBps: number | null;
 }
 
 export interface AdminUserRow {
@@ -165,6 +176,25 @@ export function AdminOrdersTable({
                         Refund quota
                       </button>
                     )}
+                    {order.chargeStatus === "charged" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (window.confirm("Refund this charge to the customer's card?")) {
+                            run(`/api/admin/orders/${order.id}`, "POST", {
+                              action: "refund_charge",
+                            });
+                          }
+                        }}
+                        className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        Refund money
+                      </button>
+                    )}
+                    {order.chargeStatus === "refunded" && (
+                      <span className="text-xs text-neutral-400">refunded</span>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -188,12 +218,23 @@ const STATUS_BADGE: Record<string, string> = {
   offline: "bg-neutral-100 text-neutral-500",
 };
 
-export function AdminVendors({ vendors }: { vendors: AdminVendorRow[] }) {
+function pct(value: number | null): string {
+  return value == null ? "—" : `${Math.round(value * 100)}%`;
+}
+
+export function AdminVendors({
+  vendors,
+  platformDefaultBps,
+}: {
+  vendors: AdminVendorRow[];
+  platformDefaultBps: number;
+}) {
   const { run, busy, error } = useAdminAction();
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [capacity, setCapacity] = useState(30);
   const [staffEmails, setStaffEmails] = useState<Record<string, string>>({});
+  const [commission, setCommission] = useState<Record<string, string>>({});
 
   // Applications first, then everyone else.
   const sorted = [...vendors].sort(
@@ -313,6 +354,64 @@ export function AdminVendors({ vendors }: { vendors: AdminVendorRow[] }) {
               Add staff
             </button>
           </div>
+
+          {/* Phase G/H: quality + commission */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-neutral-100 pt-2 text-xs text-neutral-600">
+            <span>
+              {vendor.ratingScore != null ? `${vendor.ratingScore.toFixed(1)}★` : "—"} (
+              {vendor.ratingCount})
+            </span>
+            <span>accept {pct(vendor.acceptanceRate)}</span>
+            <span>on-time {pct(vendor.onTimeRate)}</span>
+            {vendor.qualitySuspended && (
+              <span className="flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 font-medium text-red-700">
+                quality-suspended ({vendor.qualityFlagReason ?? "?"})
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    run(`/api/admin/vendors/${vendor.id}`, "PATCH", { clearQualityFlag: true })
+                  }
+                  className="underline hover:no-underline"
+                >
+                  clear
+                </button>
+              </span>
+            )}
+            <span className="ml-auto flex items-center gap-1">
+              Commission
+              <input
+                type="number"
+                min={0}
+                max={100}
+                placeholder={`${platformDefaultBps / 100}`}
+                value={commission[vendor.id] ?? ""}
+                onChange={(e) =>
+                  setCommission((prev) => ({ ...prev, [vendor.id]: e.target.value }))
+                }
+                className="w-16 rounded border border-neutral-300 px-1 py-0.5"
+              />
+              %
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const raw = commission[vendor.id];
+                  const bps =
+                    raw == null || raw.trim() === "" ? null : Math.round(Number(raw) * 100);
+                  run(`/api/admin/vendors/${vendor.id}`, "PATCH", {
+                    commissionRateOverrideBps: bps,
+                  });
+                  setCommission((prev) => ({ ...prev, [vendor.id]: "" }));
+                }}
+                className="rounded border border-neutral-300 px-1.5 py-0.5 hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {vendor.commissionOverrideBps != null
+                  ? `set (now ${vendor.commissionOverrideBps / 100}%)`
+                  : "set"}
+              </button>
+            </span>
+          </div>
         </div>
       ))}
 
@@ -365,6 +464,56 @@ export function AdminVendors({ vendors }: { vendors: AdminVendorRow[] }) {
           Add vendor
         </button>
       </form>
+    </div>
+  );
+}
+
+export function CommissionPanel({
+  defaultRateBps,
+  codeDefaultBps,
+}: {
+  defaultRateBps: number;
+  codeDefaultBps: number;
+}) {
+  const { run, busy, error } = useAdminAction();
+  const [value, setValue] = useState((defaultRateBps / 100).toString());
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-neutral-200 p-4">
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <div className="flex flex-wrap items-center gap-3">
+        <div>
+          <p className="font-medium">Platform commission</p>
+          <p className="text-xs text-neutral-500">
+            Default retained on every order. Per-vendor overrides are set in the vendor list. Code
+            fallback {codeDefaultBps / 100}%.
+          </p>
+        </div>
+        <label className="ml-auto flex items-center gap-2 text-sm">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={0.5}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="w-24 rounded border border-neutral-300 px-2 py-1"
+          />
+          %
+          <button
+            type="button"
+            disabled={busy || value.trim() === ""}
+            onClick={() =>
+              run("/api/admin/commission", "PUT", {
+                defaultRateBps: Math.round(Number(value) * 100),
+              })
+            }
+            className="rounded-md bg-amber-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+          >
+            Save
+          </button>
+        </label>
+      </div>
     </div>
   );
 }

@@ -58,3 +58,42 @@ export async function handleChargeDispute(
     { $set: { chargeStatus: "refunded" as const, refundedAt: now, updatedAt: now } },
   );
 }
+
+export type AdminRefundResult =
+  | { ok: true; reversedTransfer: boolean }
+  | { ok: false; reason: "not_charged" | "already_refunded" | string };
+
+/**
+ * Operator-initiated money refund (Phase H). Issues a Stripe refund for the
+ * coffee charge and reverses the vendor's transfer if it was already paid out
+ * — the manual equivalent of a dispute, surfaced to the admin tools. Errors
+ * are returned (not swallowed) so the operator sees them. Idempotent via the
+ * Stripe refund/reversal keys and the chargeStatus guard.
+ */
+export async function refundChargedOrder(
+  orderId: ObjectId,
+  now: Date = new Date(),
+): Promise<AdminRefundResult> {
+  const orders = await ordersCollection();
+  const order = await orders.findOne({ _id: orderId });
+  if (!order) return { ok: false, reason: "not_charged" };
+  if (order.chargeStatus === "refunded") return { ok: false, reason: "already_refunded" };
+  if (order.chargeStatus !== "charged" || !order.stripeChargeId) {
+    return { ok: false, reason: "not_charged" };
+  }
+
+  const result = await refundOrderCoffee(order._id.toHexString(), order.stripeChargeId);
+  if (!result.ok) return { ok: false, reason: result.reason };
+
+  await orders.updateOne(
+    { _id: orderId },
+    { $set: { chargeStatus: "refunded" as const, refundedAt: now, updatedAt: now } },
+  );
+
+  let reversedTransfer = false;
+  if (order.payoutStatus === "paid") {
+    await reverseOrderTransfer(order._id, now);
+    reversedTransfer = true;
+  }
+  return { ok: true, reversedTransfer };
+}
