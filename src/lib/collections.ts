@@ -2,6 +2,7 @@ import { Collection } from "mongodb";
 
 import { getDb } from "@/lib/db";
 import type {
+  CommissionConfig,
   CorporateAccount,
   Delivery,
   Location,
@@ -14,6 +15,7 @@ import type {
   User,
   Vendor,
   VendorMenuItem,
+  VendorPayout,
   WebhookEvent,
 } from "@/lib/models";
 
@@ -45,6 +47,14 @@ export async function vendorsCollection(): Promise<Collection<Vendor>> {
 
 export async function monthlyListsCollection(): Promise<Collection<MonthlyList>> {
   return (await getDb()).collection<MonthlyList>("monthlyLists");
+}
+
+export async function vendorPayoutsCollection(): Promise<Collection<VendorPayout>> {
+  return (await getDb()).collection<VendorPayout>("vendorPayouts");
+}
+
+export async function commissionConfigCollection(): Promise<Collection<CommissionConfig>> {
+  return (await getDb()).collection<CommissionConfig>("commissionConfig");
 }
 
 export async function optionTaxonomyCollection(): Promise<Collection<OptionTaxonomy>> {
@@ -84,6 +94,7 @@ export async function ensureIndexes(): Promise<void> {
     orders,
     vendors,
     monthlyLists,
+    vendorPayouts,
     taxonomy,
     menuItems,
     deliveries,
@@ -97,6 +108,7 @@ export async function ensureIndexes(): Promise<void> {
     ordersCollection(),
     vendorsCollection(),
     monthlyListsCollection(),
+    vendorPayoutsCollection(),
     optionTaxonomyCollection(),
     vendorMenuItemsCollection(),
     deliveriesCollection(),
@@ -133,6 +145,14 @@ export async function ensureIndexes(): Promise<void> {
     // One menu item per (vendor, taxonomy slug); the menu editor upserts
     // on this key. Listing a vendor's whole menu uses the prefix.
     menuItems.createIndex({ vendorId: 1, taxonomySlug: 1 }, { unique: true }),
+    // Vendor earnings/statement queries and the daily_batch sweep group by
+    // vendor + period.
+    vendorPayouts.createIndex({ vendorId: 1, period: 1 }),
+    // Idempotent daily_batch sweep: at most one batch per vendor per period.
+    vendorPayouts.createIndex(
+      { vendorId: 1, period: 1, cadence: 1 },
+      { unique: true, partialFilterExpression: { cadence: "daily_batch" } },
+    ),
     deliveries.createIndex({ orderId: 1 }, { unique: true }),
     signals.createIndex({ userId: 1, date: 1 }),
     // One preference signal per confirmed order.

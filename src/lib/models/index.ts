@@ -6,6 +6,8 @@ export * from "@/lib/models/subscription";
 export * from "@/lib/models/order";
 export * from "@/lib/models/monthly-list";
 export * from "@/lib/models/vendor";
+export * from "@/lib/models/vendor-payout";
+export * from "@/lib/models/commission-config";
 export * from "@/lib/models/option-taxonomy";
 export * from "@/lib/models/vendor-menu-item";
 export * from "@/lib/models/delivery";

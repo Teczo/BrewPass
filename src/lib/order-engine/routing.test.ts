@@ -5,6 +5,9 @@ import type { Vendor } from "@/lib/models";
 import type { CoverageItem } from "@/lib/menu";
 import {
   isEligible,
+  isNotSoldOut,
+  isUnderSlotCap,
+  isVendorAcceptingAssignment,
   isVendorOpenAt,
   isWithinServiceArea,
   rankCandidates,
@@ -35,17 +38,30 @@ function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
 
 function makeCandidate(
   vendor: Vendor,
-  extras: { menuItems?: CoverageItem[]; assignedCount?: number } = {},
+  extras: {
+    menuItems?: CoverageItem[];
+    assignedCount?: number;
+    assignedByHour?: Record<number, number>;
+  } = {},
 ): RoutingCandidate {
-  return { vendor, menuItems: extras.menuItems ?? [], assignedCount: extras.assignedCount ?? 0 };
+  return {
+    vendor,
+    menuItems: extras.menuItems ?? [],
+    assignedCount: extras.assignedCount ?? 0,
+    assignedByHour: extras.assignedByHour ?? {},
+  };
 }
 
 const baseRequest: RoutingRequest = {
   preferredVendorId: null,
   point: POINT,
+  date: "2026-06-10",
   weekday: 3,
   time: "08:00",
   drink: { drink: "Flat White", milk: "Oat" },
+  // Night-before assignment by default (the day before delivery).
+  nowLocalDate: "2026-06-09",
+  nowLocalTime: "20:00",
 };
 
 describe("isVendorOpenAt", () => {
@@ -114,6 +130,69 @@ describe("isEligible", () => {
       { category: "drink", taxonomySlug: "latte", available: true },
     ];
     expect(isEligible(makeCandidate(makeVendor(), { menuItems }), baseRequest)).toBe(false);
+  });
+
+  it("rejects vendors whose delivery-hour slot cap is full (Phase F)", () => {
+    // 08:00 delivery → hour 8. Cap 1 for that hour.
+    const vendor = makeVendor({ slotCapacities: [{ hour: 8, cap: 1 }] });
+    expect(isEligible(makeCandidate(vendor, { assignedByHour: { 8: 1 } }), baseRequest)).toBe(
+      false,
+    );
+    expect(isEligible(makeCandidate(vendor, { assignedByHour: { 8: 0 } }), baseRequest)).toBe(true);
+    // A full hour 9 doesn't block an 08:00 delivery.
+    expect(isEligible(makeCandidate(vendor, { assignedByHour: { 9: 5 } }), baseRequest)).toBe(true);
+  });
+
+  it("rejects vendors marked sold out for the delivery date (Phase F)", () => {
+    const vendor = makeVendor({ soldOutDates: ["2026-06-10"] });
+    expect(isEligible(makeCandidate(vendor), baseRequest)).toBe(false);
+    expect(isEligible(makeCandidate(vendor), { ...baseRequest, date: "2026-06-11" })).toBe(true);
+  });
+});
+
+describe("isUnderSlotCap", () => {
+  it("treats hours with no configured cap as unbounded", () => {
+    const vendor = makeVendor({ slotCapacities: [{ hour: 9, cap: 1 }] });
+    expect(isUnderSlotCap(makeCandidate(vendor, { assignedByHour: { 8: 99 } }), baseRequest)).toBe(
+      true,
+    );
+  });
+
+  it("closes an hour with a cap of 0", () => {
+    const vendor = makeVendor({ slotCapacities: [{ hour: 8, cap: 0 }] });
+    expect(isUnderSlotCap(makeCandidate(vendor), baseRequest)).toBe(false);
+  });
+});
+
+describe("isNotSoldOut", () => {
+  it("is true unless the date is in soldOutDates", () => {
+    expect(isNotSoldOut(makeVendor(), "2026-06-10")).toBe(true);
+    expect(isNotSoldOut(makeVendor({ soldOutDates: ["2026-06-10"] }), "2026-06-10")).toBe(false);
+  });
+});
+
+describe("isVendorAcceptingAssignment", () => {
+  const vendor = makeVendor({ orderAcceptCutoff: "04:00" });
+
+  it("accepts when assigned before the delivery day (night-before generation)", () => {
+    expect(isVendorAcceptingAssignment(vendor, baseRequest)).toBe(true);
+  });
+
+  it("on the delivery day, gates on the cutoff time", () => {
+    const sameDay = { ...baseRequest, nowLocalDate: "2026-06-10" };
+    expect(isVendorAcceptingAssignment(vendor, { ...sameDay, nowLocalTime: "03:59" })).toBe(true);
+    expect(isVendorAcceptingAssignment(vendor, { ...sameDay, nowLocalTime: "04:00" })).toBe(false);
+  });
+
+  it("never accepts once the delivery day has passed", () => {
+    expect(
+      isVendorAcceptingAssignment(vendor, { ...baseRequest, nowLocalDate: "2026-06-11" }),
+    ).toBe(false);
+  });
+
+  it("has no effect when the vendor sets no cutoff", () => {
+    const sameDayLate = { ...baseRequest, nowLocalDate: "2026-06-10", nowLocalTime: "23:00" };
+    expect(isVendorAcceptingAssignment(makeVendor(), sameDayLate)).toBe(true);
   });
 });
 

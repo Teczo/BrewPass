@@ -11,6 +11,15 @@ export interface CoverageItem {
   category: OptionCategory;
   taxonomySlug: string;
   available: boolean;
+  /** Vendor's price for this item in sen, when published. */
+  priceSen?: number;
+}
+
+/** The vendor's published price (sen) for a drink, or null when unpriced. */
+export function vendorDrinkPriceSen(items: CoverageItem[], drinkValue: string): number | null {
+  const drinkSlug = slugify(drinkValue);
+  const match = items.find((item) => item.category === "drink" && item.taxonomySlug === drinkSlug);
+  return match?.priceSen ?? null;
 }
 
 /**

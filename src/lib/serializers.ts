@@ -7,6 +7,7 @@ import type {
   User,
   Vendor,
   VendorMenuItem,
+  VendorPayout,
 } from "@/lib/models";
 
 /** JSON-safe shapes sent to the client (ObjectIds and Dates stringified). */
@@ -90,6 +91,32 @@ export function vendorToJson(vendor: Vendor) {
     operatingHours: vendor.operatingHours ?? null,
     serviceAreaRadiusKm: vendor.serviceAreaRadiusKm ?? null,
     reviewNote: vendor.reviewNote ?? null,
+    // Phase F capacity controls
+    dailyCapacity: vendor.dailyCapacity ?? null,
+    slotCapacities: vendor.slotCapacities ?? [],
+    orderAcceptCutoff: vendor.orderAcceptCutoff ?? null,
+    soldOutDates: vendor.soldOutDates ?? [],
+    // Phase E
+    payoutCadence: vendor.payoutCadence ?? "daily_batch",
+    connect: {
+      accountId: vendor.stripeConnectAccountId ?? null,
+      chargesEnabled: vendor.connectChargesEnabled ?? false,
+      payoutsEnabled: vendor.connectPayoutsEnabled ?? false,
+    },
+  };
+}
+
+export function vendorPayoutToJson(payout: VendorPayout) {
+  return {
+    id: payout._id.toHexString(),
+    period: payout.period,
+    cadence: payout.cadence,
+    orderCount: payout.orderIds.length,
+    grossSen: payout.grossSen,
+    commissionSen: payout.commissionSen,
+    netSen: payout.netSen,
+    status: payout.status,
+    createdAt: payout.createdAt.toISOString(),
   };
 }
 
