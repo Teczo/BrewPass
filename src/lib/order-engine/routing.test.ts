@@ -148,6 +148,24 @@ describe("isEligible", () => {
     expect(isEligible(makeCandidate(vendor), baseRequest)).toBe(false);
     expect(isEligible(makeCandidate(vendor), { ...baseRequest, date: "2026-06-11" })).toBe(true);
   });
+
+  it("rejects quality-suspended vendors (Phase G)", () => {
+    const vendor = makeVendor({ qualitySuspendedAt: now, qualityFlagReason: "low_rating" });
+    expect(isEligible(makeCandidate(vendor), baseRequest)).toBe(false);
+  });
+});
+
+describe("rankCandidates quality tiebreak", () => {
+  it("breaks an equal-distance tie by composite quality (Phase G)", () => {
+    // Same location; A has worse acceptance/on-time despite equal rating.
+    const better = makeCandidate(
+      makeVendor({ geo: POINT, ratingScore: 4, acceptanceRate: 1, onTimeRate: 1 }),
+    );
+    const worse = makeCandidate(
+      makeVendor({ geo: POINT, ratingScore: 4, acceptanceRate: 0.5, onTimeRate: 0.5 }),
+    );
+    expect(rankCandidates([worse, better], POINT)[0]).toBe(better);
+  });
 });
 
 describe("isUnderSlotCap", () => {

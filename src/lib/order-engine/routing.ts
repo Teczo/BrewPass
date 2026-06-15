@@ -3,6 +3,7 @@ import type { ObjectId } from "mongodb";
 import type { GeoPoint, Vendor } from "@/lib/models";
 import { vendorCoversDrink, type CoverageItem } from "@/lib/menu";
 import { distanceKm } from "@/lib/order-engine/logic";
+import { vendorQualityScore } from "@/lib/quality";
 
 /**
  * The Phase D routing engine — pure and deterministic, unit-tested here.
@@ -99,6 +100,12 @@ export function isNotSoldOut(vendor: Vendor, date: string): boolean {
   return !vendor.soldOutDates?.includes(date);
 }
 
+/** Whether the vendor is auto-suspended from routing for poor quality
+ * (Phase G "flag + suspend"). Cleared by an admin. */
+export function isNotQualitySuspended(vendor: Vendor): boolean {
+  return !vendor.qualitySuspendedAt;
+}
+
 /**
  * The per-vendor accept-cutoff gate (Phase F). The vendor won't take an order
  * being assigned after `orderAcceptCutoff` on the delivery day. Assignments
@@ -118,6 +125,7 @@ export function isEligible(candidate: RoutingCandidate, request: RoutingRequest)
   const { vendor } = candidate;
   return (
     vendor.status === "active" &&
+    isNotQualitySuspended(vendor) &&
     isWithinServiceArea(vendor, request.point) &&
     isVendorOpenAt(vendor.operatingHours, request.weekday, request.time) &&
     isUnderCapacity(candidate) &&
@@ -137,8 +145,9 @@ export function rankCandidates(
   return [...candidates].sort((a, b) => {
     const distanceDelta = distanceKm(a.vendor.geo, point) - distanceKm(b.vendor.geo, point);
     if (Math.abs(distanceDelta) > 1e-9) return distanceDelta;
-    const ratingDelta = (b.vendor.ratingScore ?? 0) - (a.vendor.ratingScore ?? 0);
-    if (ratingDelta !== 0) return ratingDelta;
+    // Composite quality (rating + acceptance + on-time) breaks near-ties.
+    const qualityDelta = vendorQualityScore(b.vendor) - vendorQualityScore(a.vendor);
+    if (Math.abs(qualityDelta) > 1e-9) return qualityDelta;
     return a.vendor._id.toHexString().localeCompare(b.vendor._id.toHexString());
   });
 }

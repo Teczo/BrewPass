@@ -2,10 +2,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { HealthCard } from "@/components/health-card";
+import { RateOrder } from "@/components/rate-order";
 import { UpcomingOrder } from "@/components/upcoming-order";
 import { ADD_ON_LIST } from "@/lib/addons";
 import { getCurrentSubscription } from "@/lib/billing";
-import { locationsCollection, ordersCollection, preferencesCollection } from "@/lib/collections";
+import {
+  locationsCollection,
+  ordersCollection,
+  preferencesCollection,
+  ratingsCollection,
+} from "@/lib/collections";
 import { formatMyr } from "@/lib/format";
 import { summarizeHealth } from "@/lib/health";
 import { PLANS } from "@/lib/plans";
@@ -38,10 +44,11 @@ export default async function DashboardPage() {
   const status = await getOnboardingStatus(user);
   if (!status.completed) redirect("/onboarding");
 
-  const [locations, preferences, orders] = await Promise.all([
+  const [locations, preferences, orders, ratings] = await Promise.all([
     locationsCollection(),
     preferencesCollection(),
     ordersCollection(),
+    ratingsCollection(),
   ]);
   const today = localDateOf(new Date());
   const [locationDocs, preference, subscription, upcomingOrder, recentOrders] = await Promise.all([
@@ -56,6 +63,13 @@ export default async function DashboardPage() {
       .toArray(),
   ]);
   const hasLiveSubscription = subscription !== null && subscription.status !== "canceled";
+
+  // Phase G: which recent orders the user has already rated (to show stars).
+  const ratingByOrderId = new Map(
+    (
+      await ratings.find({ orderId: { $in: recentOrders.map((order) => order._id) } }).toArray()
+    ).map((rating) => [rating.orderId.toHexString(), rating.score]),
+  );
 
   const defaultLocation = preference
     ? locationDocs.find((location) => location._id.equals(preference.defaultLocationId))
@@ -218,22 +232,30 @@ export default async function DashboardPage() {
           <h2 className="font-semibold">Recent orders</h2>
           <ul className="mt-2 flex flex-col gap-1 text-sm text-neutral-600">
             {recentOrders.map((order) => (
-              <li key={order._id.toHexString()} className="flex items-center justify-between">
+              <li key={order._id.toHexString()} className="flex items-center justify-between gap-3">
                 <span>
                   {order.date} — {order.drink.drink} to {order.location.label}
                 </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    order.status === "delivered"
-                      ? "bg-green-100 text-green-800"
-                      : order.status === "failed"
-                        ? "bg-red-100 text-red-700"
-                        : order.status === "skipped"
-                          ? "bg-neutral-100 text-neutral-500"
-                          : "bg-amber-100 text-amber-900"
-                  }`}
-                >
-                  {ORDER_STATUS_LABELS[order.status] ?? order.status}
+                <span className="flex items-center gap-3">
+                  {order.status === "delivered" && (
+                    <RateOrder
+                      orderId={order._id.toHexString()}
+                      initialScore={ratingByOrderId.get(order._id.toHexString())}
+                    />
+                  )}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      order.status === "delivered"
+                        ? "bg-green-100 text-green-800"
+                        : order.status === "failed"
+                          ? "bg-red-100 text-red-700"
+                          : order.status === "skipped"
+                            ? "bg-neutral-100 text-neutral-500"
+                            : "bg-amber-100 text-amber-900"
+                    }`}
+                  >
+                    {ORDER_STATUS_LABELS[order.status] ?? order.status}
+                  </span>
                 </span>
               </li>
             ))}

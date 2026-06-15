@@ -24,6 +24,7 @@ import {
 import { chargeOrderCoffee } from "@/lib/payments/charge";
 import { resolveCommissionBps } from "@/lib/payments/commission";
 import { splitOrderAmount } from "@/lib/payments/money";
+import { recordAcceptance } from "@/lib/quality-service";
 import { getStripe } from "@/lib/stripe";
 import { pickSuggestion } from "@/lib/suggestions";
 import { formatLocalTime12h, isoWeekdayOf, localDateOf, localTimeOf } from "@/lib/time";
@@ -340,6 +341,14 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
 
     if (confirmed) {
       summary.confirmed += 1;
+
+      // Phase G: an order that locks without a decline is an implicit accept
+      // for the assigned vendor — feeds the acceptance rate. Best-effort.
+      try {
+        await recordAcceptance(order.vendorId, now);
+      } catch (error) {
+        console.error(`Acceptance metric for order ${order._id.toHexString()} failed:`, error);
+      }
 
       // Phase 10: charge add-ons off-session to the card saved at
       // subscription checkout. Idempotent per order via Stripe

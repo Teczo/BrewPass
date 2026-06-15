@@ -11,6 +11,7 @@ import type {
   Order,
   Preference,
   PreferenceSignal,
+  Rating,
   Subscription,
   User,
   Vendor,
@@ -57,6 +58,10 @@ export async function commissionConfigCollection(): Promise<Collection<Commissio
   return (await getDb()).collection<CommissionConfig>("commissionConfig");
 }
 
+export async function ratingsCollection(): Promise<Collection<Rating>> {
+  return (await getDb()).collection<Rating>("ratings");
+}
+
 export async function optionTaxonomyCollection(): Promise<Collection<OptionTaxonomy>> {
   return (await getDb()).collection<OptionTaxonomy>("optionTaxonomy");
 }
@@ -95,6 +100,7 @@ export async function ensureIndexes(): Promise<void> {
     vendors,
     monthlyLists,
     vendorPayouts,
+    ratings,
     taxonomy,
     menuItems,
     deliveries,
@@ -109,6 +115,7 @@ export async function ensureIndexes(): Promise<void> {
     vendorsCollection(),
     monthlyListsCollection(),
     vendorPayoutsCollection(),
+    ratingsCollection(),
     optionTaxonomyCollection(),
     vendorMenuItemsCollection(),
     deliveriesCollection(),
@@ -145,6 +152,10 @@ export async function ensureIndexes(): Promise<void> {
     // One menu item per (vendor, taxonomy slug); the menu editor upserts
     // on this key. Listing a vendor's whole menu uses the prefix.
     menuItems.createIndex({ vendorId: 1, taxonomySlug: 1 }, { unique: true }),
+    // One rating per order (idempotent submit); vendor aggregation reads by
+    // vendorId.
+    ratings.createIndex({ orderId: 1 }, { unique: true }),
+    ratings.createIndex({ vendorId: 1 }),
     // Vendor earnings/statement queries and the daily_batch sweep group by
     // vendor + period.
     vendorPayouts.createIndex({ vendorId: 1, period: 1 }),
