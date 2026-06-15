@@ -1,37 +1,48 @@
-# BrewPass — Production Deployment Guide
+# BrewPass — Production Deployment Guide (v2 Marketplace)
+
+This guide covers the **v2 multi-vendor marketplace**. It supersedes the
+single-vendor v1 guide: v2 adds a vendor portal, an order-routing engine,
+a standardized menu taxonomy, the AI vendor recommender, monthly lists,
+and **Stripe Connect** payouts. If you ran the v1 deployment already, the
+new pieces are §4b (Connect), §9b (AI recommender), the third cron in §2,
+and the first-run **migrations** in §10 — skim those and skip the rest.
 
 One Vercel project hosts everything (frontend pages, API routes, cron
 jobs). Every other service is SaaS you configure once and connect via
-environment variables. Total cost to start: ~RM0 (free tiers everywhere
-except a paid Vercel plan if you want long-running crons — see §2).
+environment variables.
 
 Architecture recap:
 
-| Concern            | Service              | Where configured              |
-| ------------------ | -------------------- | ----------------------------- |
-| Frontend + backend | Vercel (Next.js)     | §2                            |
-| Database           | MongoDB Atlas        | §1                            |
-| Auth               | Auth0                | §3                            |
-| Payments           | Stripe               | §4                            |
-| Push notifications | Firebase (FCM)       | §5                            |
-| Geocoding          | Google Maps Platform | §6                            |
-| SMS (optional)     | Twilio               | §7                            |
-| Email (optional)   | Resend               | §8                            |
-| Error monitoring   | Sentry               | §9                            |
-| Scheduled jobs     | Vercel Cron          | automatic from vercel.json    |
-| Weather            | Open-Meteo           | nothing — keyless             |
-| File storage       | Vercel Blob          | not used yet; add when needed |
+| Concern                          | Service              | Where configured              |
+| -------------------------------- | -------------------- | ----------------------------- |
+| Frontend + backend               | Vercel (Next.js)     | §2                            |
+| Database                         | MongoDB Atlas        | §1                            |
+| Auth (user/vendor/admin)         | Auth0                | §3                            |
+| Subscriptions + card             | Stripe               | §4                            |
+| Vendor payouts                   | Stripe **Connect**   | §4b                           |
+| Push notifications               | Firebase (FCM)       | §5                            |
+| Geocoding + routing              | Google Maps Platform | §6                            |
+| SMS (optional)                   | Twilio               | §7                            |
+| Email (optional)                 | Resend               | §8                            |
+| Error monitoring                 | Sentry               | §9                            |
+| AI vendor recommender (optional) | Anthropic            | §9b                           |
+| Scheduled jobs                   | Vercel Cron          | automatic from vercel.json    |
+| Weather                          | Open-Meteo           | nothing — keyless             |
+| File storage                     | Vercel Blob          | not used yet; add when needed |
 
-Work top to bottom; only §1–§3 are required for the app to boot and log
-in. §4 enables billing. The rest can be added incrementally — every
-integration degrades gracefully when unconfigured.
+Work top to bottom. §1–§3 are required for the app to boot and log in.
+§4 + §4b enable billing and payouts (the marketplace can't move money
+without both). The rest can be added incrementally — every integration
+degrades gracefully when unconfigured (the AI recommender even falls back
+to a deterministic scorer, see §9b).
 
 ---
 
 ## 0. Merge the branch
 
-Vercel should deploy production from `main`. Merge PR #1
-(`claude/bold-lamport-tunvpc` → `main`) first.
+Vercel deploys production from `main`. Merge the v2 marketplace branch
+(`v2-marketplace` → `main`) before the production deploy. v2 is an additive
+refactor over v1; the Phase A migration in §10 is what diverges the data.
 
 ## 1. MongoDB Atlas (database)
 
@@ -52,6 +63,11 @@ MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=t
 MONGODB_DB=brewpass
 ```
 
+v2 adds several collections (`vendors`, `optionTaxonomy`, `vendorMenuItems`,
+`monthlyLists`, `vendorPayouts`, `commissionConfig`, `ratings`,
+`deliveries`, `preferenceSignals`, …). You don't create them by hand —
+they're provisioned with their indexes by **Set up DB indexes** in §10.
+
 ## 2. Vercel (frontend + backend + cron)
 
 1. https://vercel.com/new → import the `Teczo/BrewPass` GitHub repo.
@@ -68,19 +84,27 @@ MONGODB_DB=brewpass
    or a custom domain — add the domain under Settings → Domains first
    if you have one, and use it consistently everywhere below).
 4. Set `APP_BASE_URL=https://<your-domain>` (no trailing slash) and
-   redeploy.
-5. **Cron jobs** register automatically from `vercel.json`:
-   - `/api/cron/generate-orders` at 12:00 UTC (= 20:00 KL, night-before)
-   - `/api/cron/cutoff` at 22:00 UTC (= 06:00 KL, lock + quota)
-     Vercel calls them with `Authorization: Bearer $CRON_SECRET`.
-     Plan note: Hobby allows daily crons but caps function duration —
-     the cron routes request `maxDuration = 300`, which needs the Pro
-     plan (or Fluid compute) once you have real volume. For early
+   redeploy. Connect onboarding links (§4b) are built from this value,
+   so it must be correct.
+5. **Cron jobs** register automatically from `vercel.json` — there are now
+   **three**:
+   - `/api/cron/generate-orders` at 12:00 UTC (= 20:00 KL, night-before):
+     creates tomorrow's vendor-assigned orders from confirmed monthly
+     lists / subscriptions, then sends night-before notifications.
+   - `/api/cron/cutoff` at 22:00 UTC (= 06:00 KL): locks each order,
+     **charges the user for that one coffee into the platform balance**,
+     and decrements quota — exactly once per order.
+   - `/api/cron/payouts` at 15:00 UTC (= 23:00 KL): sweeps each vendor's
+     **delivered, charged, unpaid** orders into transfers to their
+     connected account (delivery-gated; see §4b).
+     Vercel calls all three with `Authorization: Bearer $CRON_SECRET`.
+     Plan note: the cron routes request `maxDuration = 300`, which needs
+     the Pro plan (or Fluid compute) once you have real volume. For early
      testing, Hobby works.
 6. Smoke test: `https://<domain>/api/health` should return
    `{"ok":true,"db":"up"}`. If `db: "down"`, re-check §1 credentials.
 
-## 3. Auth0 (login)
+## 3. Auth0 (login — user, vendor, admin)
 
 1. https://manage.auth0.com → create a tenant (region: Australia or
    Japan — closest options to MY).
@@ -103,18 +127,18 @@ APP_BASE_URL=https://<domain>
 4. Redeploy, open the site, click **Log in / Sign up**, create your own
    account, and complete onboarding. This creates your User document.
 
+Roles (`individual` | `vendor` | `admin`) live on the User document, not
+in Auth0 — no Auth0 rules/actions are required. Admins are set once (below);
+the **vendor** role is granted automatically when an admin approves a
+vendor application (§10), and portal access is scoped to that vendor.
+
 ### Bootstrap the first admin (one-time)
 
 In Atlas: Browse Collections → `brewpass.users` → find your document →
-edit `role` from `"individual"` to `"admin"`. Then:
+edit `role` from `"individual"` to `"admin"`. Then open
+`https://<domain>/admin` and run the one-time setup in §10.
 
-1. Open `https://<domain>/admin`.
-2. Click **Set up DB indexes** (top right). This creates the unique
-   indexes the system's idempotency guarantees depend on — do not skip.
-3. From now on, roles, student verification, and café staff are all
-   managed from this screen — no more DB edits.
-
-## 4. Stripe (subscriptions & payments)
+## 4. Stripe — subscriptions & per-day charging
 
 Use **test mode** first; repeat with live keys when ready.
 
@@ -127,33 +151,75 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
 
 2. Developers → **Webhooks** → Add endpoint:
    - URL: `https://<domain>/api/webhooks/stripe`
-   - Events: `customer.subscription.created`,
-     `customer.subscription.updated`, `customer.subscription.deleted`,
-     `invoice.paid`, `invoice.payment_failed`
+   - Events:
+     - `checkout.session.completed` — saves the card on file (SetupIntent)
+     - `customer.subscription.created`, `customer.subscription.updated`,
+       `customer.subscription.deleted`
+     - `invoice.paid`, `invoice.payment_failed`
+     - `account.updated` — Connect onboarding/capability changes (§4b)
+     - `charge.dispute.created` — triggers refund + transfer reversal (§4b)
+   - **Also enable "Listen to events on Connected accounts"** on this
+     endpoint so `account.updated` for vendors' Express accounts reaches
+     it. (Alternatively add a second Connect-scoped endpoint at the same
+     URL — the handler is the same.)
    - Copy the signing secret → `STRIPE_WEBHOOK_SECRET=whsec_...`
-3. **No product setup needed** — products/prices self-provision on first
-   checkout via lookup keys (`brewpass_lite_monthly`, `_weekday_`,
-   `_premium_`, `_student_`, `_corporate_seat_`), in MYR at the
-   confirmed prices.
-4. Redeploy, then test: Dashboard → Billing → subscribe to Lite with
-   card `4242 4242 4242 4242`, any future expiry/CVC. Verify the plan
-   shows "Active" in the app, the products appeared in Stripe, and the
-   webhook deliveries show 200s.
-5. **Add-ons (Phase 10)**: pastries/extra drinks picked at the modify
-   step are charged **off-session at the 6 AM cutoff** as PaymentIntents
-   against the card saved during subscription checkout. No extra Stripe
-   configuration is needed — but be aware:
-   - A failed add-on charge never blocks the coffee; the add-ons are
-     dropped and the order is flagged (`addOnsPaymentStatus: failed`).
-   - In live mode, off-session charges can be declined by banks that
-     require 3DS; Stripe retries authentication-exempt flows
-     automatically where possible. Watch the failed-payments list in
-     the Stripe dashboard during the first weeks.
-   - Add-ons are disabled for corporate seats (the saved card belongs
-     to the company).
-6. Going live: Stripe Malaysia account activation (business details),
-   swap to live keys, create a **second** webhook endpoint in live mode
-   (signing secrets differ per mode).
+3. **No product setup needed** — subscription products/prices self-provision
+   on first checkout via lookup keys, in MYR at the confirmed prices.
+
+**Charging model (v2 — important).** The user is **not** charged the month
+upfront. At signup the card is validated and saved via a Stripe SetupIntent
+(Checkout in `setup` mode → `checkout.session.completed`); no charge yet.
+Then **each day's cutoff charges the user for that one coffee** into the
+**platform balance** and locks the order. Charging is fully automatic — the
+user does nothing daily. Any "monthly" feel is a statement/summary, never an
+upfront charge.
+
+4. Test: subscribe with card `4242 4242 4242 4242` (any future expiry/CVC).
+   Confirm the plan shows "Active", the card is saved, and the webhook
+   deliveries show 200s. Then run the cutoff cron (see §11) and verify a
+   per-day PaymentIntent was created against the saved card.
+5. Going live: Stripe Malaysia account activation (business details), swap
+   to live keys, and create a **second** webhook endpoint in live mode
+   (signing secrets differ per mode). Enable Connect (§4b) in live too.
+
+## 4b. Stripe Connect — vendor payouts (critical)
+
+Vendors are onboarded as Stripe **Express connected accounts**. Stripe
+collects and holds all bank/KYC data — BrewPass never stores payout details.
+
+1. In the Stripe Dashboard, enable **Connect** (Connect → Get started).
+   Choose the platform profile; Express accounts are created by the app.
+   No extra env var is needed beyond `STRIPE_SECRET_KEY` (the same key
+   creates connected accounts and transfers).
+2. Set the Connect branding/business name so vendors see "BrewPass" on the
+   Stripe-hosted onboarding pages.
+3. Vendors onboard themselves from the vendor portal (`/vendor/profile` →
+   "Connect payouts"). The app:
+   - creates an Express account (country `MY`, `transfers` capability) and
+     returns a Stripe-hosted onboarding link (built from `APP_BASE_URL`),
+   - mirrors the account's `charges_enabled` / `payouts_enabled` flags from
+     the `account.updated` webhook — this is the "can this vendor be paid?"
+     gate.
+
+**Money flow (hold then release).** The user is charged at cutoff into the
+**platform balance** (§4). The vendor's share is transferred to their
+connected account **only after delivery is confirmed**, net of commission —
+the Grab/Uber model. Separate charges and transfers are used (not card auth
+holds). **No delivery → no transfer**, regardless of payout cadence.
+
+- **Payout cadence** is the vendor's choice in their portal: `per_order`
+  (transfer per completed delivery) or `daily_batch` (default — one sweep of
+  the day's delivered funds, via the payouts cron in §2).
+- **Commission** = platform default + optional per-vendor override, set in
+  `/admin` (Commission panel). Retained by the platform on each transfer.
+- **Refunds / disputes:** a failed/no-show delivery → no transfer; refund or
+  credit the user. A delivered-then-disputed charge (`charge.dispute.created`)
+  → refund the user **and reverse the vendor transfer**. All transfer/refund
+  actions are idempotency-keyed.
+
+Test Connect end-to-end in test mode: onboard a test vendor (Stripe provides
+test KYC values), let an order reach `delivered`, then run the payouts cron
+(§11) and confirm a transfer appears on the connected account.
 
 ## 5. Firebase (FCM push)
 
@@ -179,7 +245,7 @@ the code converts them.
    (`/api/me/fcm-token`); nothing else to wire. Native app setup
    (google-services.json, APNs key) is in `docs/mobile.md`.
 
-## 6. Google Maps Platform (geocoding)
+## 6. Google Maps Platform (geocoding + routing distance)
 
 1. https://console.cloud.google.com → create/select a project → enable
    the **Geocoding API** (billing account required; $200/month free
@@ -193,8 +259,10 @@ the code converts them.
 GOOGLE_MAPS_API_KEY=...
 ```
 
-Without this key, adding delivery locations fails — it's effectively
-required for onboarding.
+In v2 this key is used not just for subscriber delivery locations but also
+to geocode **vendor addresses** and to compute **routing distances**
+(subscriber ↔ vendor) for the routing engine and the AI recommender. It's
+effectively required for vendor onboarding and order routing.
 
 ## 7. Twilio (optional — delivery SMS)
 
@@ -237,35 +305,117 @@ SENTRY_AUTH_TOKEN=sntrys_...
 All optional — the app runs without Sentry; with the DSN set, client,
 server, and edge errors are captured automatically.
 
-## 10. Post-deploy verification checklist
+## 9b. Anthropic (optional — AI vendor recommender)
+
+The hybrid vendor selection lets a subscriber answer a short priorities
+questionnaire (proximity, price, speed, rating, drink) and get an AI-
+recommended vendor. The recommendation is **advisory** — it takes effect
+only after the user reviews and confirms it.
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+If this key is **unset** (or a call fails), the app automatically falls
+back to a deterministic, priority-weighted scorer — selection never blocks
+on the model. So this key is genuinely optional; set it to enable the
+natural-language reasoning path. The recommender is server-only.
+
+## 10. First-run setup (indexes, migrations, first vendor)
+
+Open `https://<domain>/admin` as the admin you bootstrapped in §3. The
+header has three one-click buttons — **run them in this order** (all are
+idempotent and safe to re-run):
+
+1. **Set up DB indexes** — creates every index the app relies on, including
+   the unique keys that make order generation, payouts, and webhook
+   handling idempotent. Do not skip this.
+2. **Seed menu taxonomy** (Phase C) — seeds the canonical `OptionTaxonomy`
+   (drinks, sizes, milks, add-ons, strength) that all subscriber
+   preferences and vendor menus reference, and absorbs any legacy v1
+   preference values. Vendors map their offerings onto this taxonomy.
+3. **Migrate cafés → vendors** (Phase A) — **only if you are upgrading an
+   existing v1 database.** Copies each v1 café into `vendors` (same `_id`,
+   so order references stay valid) and rekeys orders `cafeId → vendorId`.
+   Your own operation becomes **Vendor #1** — no special-casing. The `cafes`
+   collection is left as a rollback backup. On a brand-new database there
+   are no cafés to migrate, so this is a no-op.
+
+Rollback (both migrations) is a deliberate API call, not a button:
+`POST /api/admin/migrations/phase-a` (or `phase-c`) with
+`{"direction":"down"}` as admin — use it only together with a rollback to
+v1 code.
+
+### Standing up Vendor #1 / new vendors
+
+- **Fresh install (no v1 data):** create the operator's own vendor through
+  the normal flow — `/vendor/apply` (business info, address, hours,
+  capacity, service-area radius) → approve it in `/admin`. That is Vendor #1.
+- **Upgrade:** Phase A already created Vendor #1 from your v1 café.
+
+For each active vendor (including Vendor #1): set up the **menu** (map
+offerings to the taxonomy, prices, availability) at `/vendor/menu`, and
+complete **Connect onboarding** (§4b) at `/vendor/profile` so payouts can
+flow. Orders won't route to a vendor that is offline, has no menu coverage
+for the drink, or is over capacity.
+
+New third-party vendors self-serve: any logged-in user applies at
+`/vendor/apply` → an admin approves in `/admin` (this grants the `vendor`
+role and portal access) → the vendor configures menu, capacity, hours,
+service area, and Connect.
+
+## 11. Post-deploy verification checklist
 
 Run through in order:
 
 - [ ] `GET /api/health` → `{"ok":true,"db":"up"}`
-- [ ] Sign up, onboard (profile → location with geocoding → preferences)
-- [ ] `/admin` reachable as admin; **Set up DB indexes** clicked ✓
-- [ ] Create your first café in `/admin` (orders won't generate without
-      an active café!) and link a staff account
-- [ ] Stripe test checkout → plan Active, webhook deliveries 200
+- [ ] Admin one-time setup done: **indexes ✓**, **taxonomy seeded ✓**,
+      and (upgrades only) **Phase A migrated ✓**
+- [ ] At least one **active vendor** exists with a published menu and
+      `payouts_enabled` Connect account (Vendor #1 at minimum)
+- [ ] Sign up as a subscriber, onboard (profile → location with geocoding
+      → taxonomy-based preferences), and pick a vendor — manual **and** the
+      AI recommendation flow (confirm the recommendation is editable before
+      it takes effect)
+- [ ] Confirm a **monthly list** → individual scheduled daily orders appear
+- [ ] Stripe: card saved at signup (no upfront charge); webhook deliveries 200
 - [ ] Cron auth: `curl -H "Authorization: Bearer $CRON_SECRET" \
 https://<domain>/api/cron/generate-orders` → JSON summary
       (wrong/missing token must give 401/503)
-- [ ] Force a full loop in test: with an active subscription whose
-      schedule includes tomorrow, run the generate cron (above), check
-      the dashboard shows tomorrow's order, then run
-      `/api/cron/cutoff` after 06:00 KL and confirm quota decremented
-- [ ] Add-on charge: add a pastry to tomorrow's order, run the cutoff,
-      and verify the off-session PaymentIntent succeeded in Stripe
-      (test mode uses the card saved at checkout)
+- [ ] Full daily loop in test: run generate-orders, see tomorrow's
+      vendor-assigned order on the dashboard, run `/api/cron/cutoff` after
+      06:00 KL and confirm the order locked, quota decremented, and a
+      **per-day charge** to the platform balance succeeded in Stripe
+- [ ] Routing fallback: take the preferred vendor offline (or over capacity)
+      and confirm the order **reassigns** to another vendor
+- [ ] Payout: mark an order `delivered` (vendor portal `/vendor`), run
+      `/api/cron/payouts`, and confirm a transfer (net of commission) hit
+      the vendor's connected account — and that an **undelivered** order
+      produced **no** transfer
+- [ ] Dispute path: trigger a test `charge.dispute.created` and confirm the
+      user refund + transfer reversal
 - [ ] Sentry: throw a test error, see it in the dashboard
 
-## 11. Ongoing operations
+## 12. Ongoing operations
 
-- **Failures**: the `/admin` screen lists today's failed orders with
-  reasons; Sentry catches exceptions.
-- **Money refunds**: Stripe dashboard (in-app "refund" returns quota
-  credit only, by design).
-- **New environments** (staging): repeat with a separate Atlas DB,
-  Auth0 application, and Stripe test-mode webhook; never share
-  webhook secrets between environments.
-- **Mobile apps**: `docs/mobile.md` once the web deployment is stable.
+- **Routing health**: `/admin` shows reassignment rate, today's failures by
+  reason, and quality-suspended vendors.
+- **Vendor applications**: approve/reject in `/admin`; approval grants the
+  vendor role + portal access.
+- **Commission**: set the platform default and per-vendor overrides in the
+  `/admin` Commission panel — never hardcode.
+- **Payouts**: the payouts cron sweeps delivered funds nightly; vendors see
+  earnings/statements/history at `/vendor/earnings`. Payout cadence is the
+  vendor's choice (`per_order` vs `daily_batch`).
+- **Failures**: `/admin` lists today's failed orders with reasons; Sentry
+  catches exceptions.
+- **Money refunds / disputes**: handled via Stripe (`charge.dispute.created`
+  auto-reverses the vendor transfer); in-app "refund" returns quota credit.
+- **New environments** (staging): repeat with a separate Atlas DB, Auth0
+  application, Stripe test-mode webhook, and a Connect test platform; never
+  share webhook secrets between environments. Re-run the §10 admin setup on
+  each new database.
+- **Mobile apps**: see `docs/mobile.md` once the web deployment is stable —
+  the same web build (now including the vendor portal) loads in the shell.
+  </content>
+  </invoke>
