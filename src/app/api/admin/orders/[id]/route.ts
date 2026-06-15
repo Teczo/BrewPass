@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
 import { ordersCollection, subscriptionsCollection, vendorsCollection } from "@/lib/collections";
+import { refundChargedOrder } from "@/lib/payments/refund";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,7 @@ const actionSchema = z.discriminatedUnion("action", [
     vendorId: z.string().regex(/^[0-9a-f]{24}$/i),
   }),
   z.object({ action: z.literal("refund_quota") }),
+  z.object({ action: z.literal("refund_charge") }),
 ]);
 
 /** Return one quota credit, at most once per order (quotaRefundedAt guard). */
@@ -100,6 +102,22 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
     return NextResponse.json({ ok: true });
+  }
+
+  if (input.action === "refund_charge") {
+    // Phase H: real money refund for a card-on-file charge, reversing the
+    // vendor transfer too if it was already paid out.
+    const result = await refundChargedOrder(orderId, now);
+    if (!result.ok) {
+      const message =
+        result.reason === "already_refunded"
+          ? "This charge was already refunded."
+          : result.reason === "not_charged"
+            ? "This order has no money charge to refund (prepaid — use Refund quota)."
+            : `Refund failed: ${result.reason}`;
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true, reversedTransfer: result.reversedTransfer });
   }
 
   // refund_quota
