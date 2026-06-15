@@ -4,6 +4,11 @@ The native apps are thin Capacitor shells that load the deployed web app
 (`server.url` in `capacitor.config.ts`). The web build stays server-rendered
 on Vercel — there is no static export.
 
+Because the shell just loads the web app, the v2 marketplace surfaces ride
+along for free: subscribers, the **vendor portal** (`/vendor/*`), and the
+admin portal (`/admin`) all run in the same shell with no extra native work.
+A vendor signing in on mobile lands in their portal exactly as on the web.
+
 ## What's already wired in this repo
 
 - `capacitor.config.ts` — app id `com.brewpass.app`, remote `server.url`
@@ -66,7 +71,9 @@ native bridge.
 - Screenshots: dashboard (upcoming order card), billing, onboarding.
 - Privacy: the app collects name, email, phone, delivery addresses and
   precise location (only when the user taps "use my current location");
-  payments are processed by Stripe.
+  subscriber payments are processed by Stripe. For vendors, payouts run
+  through Stripe Connect — bank/KYC details are collected and held by
+  Stripe, never by the app.
 - Android: signed AAB via Android Studio → Play Console.
 - iOS: archive via Xcode → App Store Connect.
 
