@@ -2,20 +2,72 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 
-import { syncSubscriptionFromStripe } from "@/lib/billing";
+import { activateCardOnFileMembership, syncSubscriptionFromStripe } from "@/lib/billing";
 import { webhookEventsCollection } from "@/lib/collections";
 import { requireEnv } from "@/lib/env";
+import { applyAccountStatus } from "@/lib/payments/connect";
+import { handleChargeDispute } from "@/lib/payments/refund";
+import { PLANS } from "@/lib/plans";
 import { getStripe } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
 const HANDLED_EVENTS = new Set([
+  "checkout.session.completed",
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
   "invoice.paid",
   "invoice.payment_failed",
+  // Phase E — Connect onboarding status + dispute handling.
+  "account.updated",
+  "charge.dispute.created",
 ]);
+
+/** Activate a card-on-file membership from a completed setup Checkout
+ * Session: pull the saved payment method off the SetupIntent and persist it.
+ * No-op for sessions that aren't membership setups. */
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
+  if (session.mode !== "setup" || session.metadata?.kind !== "membership_setup") return;
+
+  const userIdRaw = session.metadata?.userId;
+  const planKey = session.metadata?.plan;
+  if (!userIdRaw || !ObjectId.isValid(userIdRaw) || !planKey || !(planKey in PLANS)) {
+    console.error(`checkout.session.completed ${session.id}: bad membership metadata; skipping.`);
+    return;
+  }
+
+  const setupIntentId =
+    typeof session.setup_intent === "string" ? session.setup_intent : session.setup_intent?.id;
+  if (!setupIntentId) {
+    console.error(`checkout.session.completed ${session.id}: no setup_intent; skipping.`);
+    return;
+  }
+
+  const stripe = getStripe();
+  const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
+  const paymentMethodId =
+    typeof setupIntent.payment_method === "string"
+      ? setupIntent.payment_method
+      : setupIntent.payment_method?.id;
+  const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+  if (!paymentMethodId || !customerId) {
+    console.error(`checkout.session.completed ${session.id}: no card/customer; skipping.`);
+    return;
+  }
+
+  // Make this the customer's default for any future off-session charge.
+  await stripe.customers.update(customerId, {
+    invoice_settings: { default_payment_method: paymentMethodId },
+  });
+
+  await activateCardOnFileMembership({
+    userId: new ObjectId(userIdRaw),
+    plan: PLANS[planKey as keyof typeof PLANS],
+    stripeCustomerId: customerId,
+    paymentMethodId,
+  });
+}
 
 /** Pull the subscription id out of an invoice across Stripe API shapes. */
 function subscriptionIdFromInvoice(invoice: Stripe.Invoice): string | null {
@@ -67,6 +119,35 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (event.type === "checkout.session.completed") {
+      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      return NextResponse.json({ received: true });
+    }
+
+    // Phase E: Connect account capability changes → refresh the vendor's
+    // charges/payouts-enabled flags (gates payouts).
+    if (event.type === "account.updated") {
+      const account = event.data.object as Stripe.Account;
+      await applyAccountStatus(
+        account.id,
+        Boolean(account.charges_enabled),
+        Boolean(account.payouts_enabled),
+      );
+      return NextResponse.json({ received: true });
+    }
+
+    // Phase E: a disputed coffee charge → reverse the vendor transfer (if
+    // paid) and mark the order refunded.
+    if (event.type === "charge.dispute.created") {
+      const dispute = event.data.object as Stripe.Dispute;
+      const paymentIntentId =
+        typeof dispute.payment_intent === "string"
+          ? dispute.payment_intent
+          : dispute.payment_intent?.id;
+      if (paymentIntentId) await handleChargeDispute(paymentIntentId);
+      return NextResponse.json({ received: true });
+    }
+
     let subscriptionId: string | null = null;
     if (event.type.startsWith("customer.subscription.")) {
       subscriptionId = (event.data.object as Stripe.Subscription).id;

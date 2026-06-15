@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSubscription, getOrCreateStripeCustomer, resolvePriceId } from "@/lib/billing";
+import { getCurrentSubscription, getOrCreateStripeCustomer } from "@/lib/billing";
 import { requireEnv } from "@/lib/env";
 import { PLANS } from "@/lib/plans";
 import { getStripe } from "@/lib/stripe";
@@ -44,21 +44,19 @@ export async function POST(request: Request) {
   }
 
   const plan = PLANS[parsed.data.plan];
-  const [customerId, priceId] = await Promise.all([
-    getOrCreateStripeCustomer(user),
-    resolvePriceId(plan),
-  ]);
+  const customerId = await getOrCreateStripeCustomer(user);
 
   const baseUrl = requireEnv("APP_BASE_URL");
+  // Phase E: save the card via a SetupIntent — no upfront/recurring charge
+  // (critical rule #3). The membership is activated from the
+  // checkout.session.completed webhook; coffee is charged per-day at cutoff.
   const session = await getStripe().checkout.sessions.create({
-    mode: "subscription",
+    mode: "setup",
     customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
+    currency: "myr",
     success_url: `${baseUrl}/dashboard/billing?success=1`,
     cancel_url: `${baseUrl}/dashboard/billing?canceled=1`,
-    subscription_data: {
-      metadata: { userId: user._id.toHexString(), plan: plan.plan },
-    },
+    metadata: { userId: user._id.toHexString(), plan: plan.plan, kind: "membership_setup" },
   });
 
   if (!session.url) {

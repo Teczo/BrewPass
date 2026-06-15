@@ -4,6 +4,8 @@ import { z } from "zod";
 
 import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
 import { sendSms } from "@/lib/notifications";
+import { handleOrderDelivered } from "@/lib/payments/payout";
+import { refundFailedDelivery } from "@/lib/payments/refund";
 import { getCurrentVendorContext } from "@/lib/vendors";
 
 export const runtime = "nodejs";
@@ -104,6 +106,16 @@ export async function POST(request: Request, context: RouteContext) {
       { $set: { status: "delivered", updatedAt: now } },
     );
 
+    // Phase E: release the vendor's payout now that delivery is confirmed
+    // (delivery-gated, rule #4). Best-effort — a per_order transfer hiccup
+    // leaves the order `pending` for the daily sweep to retry; it must never
+    // block the delivery transition.
+    try {
+      await handleOrderDelivered(order._id, now);
+    } catch (error) {
+      console.error(`Payout on delivery for order ${order._id.toHexString()} failed:`, error);
+    }
+
     // Optional SMS — best-effort, never blocks the transition.
     const users = await usersCollection();
     const customer = await users.findOne({ _id: order.userId });
@@ -144,5 +156,14 @@ export async function POST(request: Request, context: RouteContext) {
       $set: { status: "failed", failureReason: `delivery_failed: ${input.reason}`, updatedAt: now },
     },
   );
+
+  // Phase E: delivery failed → refund the user for that day; no transfer was
+  // ever released (payout is delivery-gated). Best-effort, never blocks.
+  try {
+    await refundFailedDelivery(order._id, now);
+  } catch (error) {
+    console.error(`Refund on failed delivery for order ${order._id.toHexString()} failed:`, error);
+  }
+
   return NextResponse.json({ ok: true, delivery: { status: "failed" } });
 }

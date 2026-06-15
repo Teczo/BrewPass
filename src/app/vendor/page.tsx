@@ -185,6 +185,12 @@ export default async function VendorPortalPage() {
           <Link href="/vendor/menu" className="text-sm text-amber-800 hover:underline">
             Menu
           </Link>
+          <Link href="/vendor/capacity" className="text-sm text-amber-800 hover:underline">
+            Capacity
+          </Link>
+          <Link href="/vendor/earnings" className="text-sm text-amber-800 hover:underline">
+            Earnings
+          </Link>
           <Link href="/vendor/profile" className="text-sm text-amber-800 hover:underline">
             Profile &amp; hours
           </Link>

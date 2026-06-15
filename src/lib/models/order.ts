@@ -44,6 +44,12 @@ export const orderSchema = baseDocumentSchema.extend({
   /** Fulfilling vendor (v1 cafeId, renamed in the Phase A migration). */
   vendorId: objectIdSchema,
   /**
+   * The confirmed monthly list this order was created from (Phase D.5).
+   * Unset for orders generated directly by the nightly job (users without a
+   * confirmed list, or fallback days the planner couldn't pre-assign).
+   */
+  monthlyListId: objectIdSchema.optional(),
+  /**
    * How `vendorId` was chosen (Phase D routing). `user_preferred` = the
    * subscriber's confirmed preferred vendor; `ai_routed` = platform
    * auto-routing; `reassigned` = re-routed after a vendor declined.
@@ -53,9 +59,31 @@ export const orderSchema = baseDocumentSchema.extend({
    * decline can't bounce back to the same vendor. */
   declinedVendorIds: z.array(objectIdSchema).optional(),
   status: orderStatusSchema,
-  /** Price snapshot in sen (MYR). Set when the order is generated/confirmed. */
+  /** Price snapshot in sen (MYR). Set when the order is generated/confirmed.
+   * This is the gross the subscriber is charged for the coffee at cutoff. */
   priceSen: moneySenSchema.optional(),
   stripePaymentIntentId: z.string().optional(),
+  /**
+   * Phase E per-day charge. The subscriber's card is charged `priceSen` into
+   * the platform balance at cutoff (separate charges and transfers — the
+   * vendor is paid only after delivery). `chargeStatus` tracks that charge;
+   * commission/net are snapshotted at charge time so payout never re-reads a
+   * live rate (critical rule #4 + #6).
+   */
+  chargeStatus: z.enum(["charged", "failed", "refunded"]).optional(),
+  /** PaymentIntent id for the coffee charge (distinct from the add-on intent). */
+  stripeChargeId: z.string().optional(),
+  chargedAt: z.date().optional(),
+  refundedAt: z.date().optional(),
+  commissionAmountSen: moneySenSchema.optional(),
+  vendorNetAmountSen: moneySenSchema.optional(),
+  /** Payout lifecycle for the vendor's net, gated on delivery. `pending` =
+   * delivered and awaiting transfer/sweep; `paid` = transferred; `reversed` =
+   * clawed back on refund/dispute. */
+  payoutStatus: z.enum(["pending", "paid", "reversed"]).optional(),
+  stripeTransferId: z.string().optional(),
+  /** The VendorPayout (batch) this order's net was swept into. */
+  vendorPayoutId: objectIdSchema.optional(),
   /** UTC instant after which the order is locked and charged. */
   cutoffAt: z.date(),
   /** True when created by the nightly cron rather than manually. */

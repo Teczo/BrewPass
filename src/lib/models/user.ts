@@ -26,6 +26,12 @@ export const userSchema = baseDocumentSchema.extend({
   onboardingCompletedAt: z.date().optional(),
   /** Stripe customer id, created lazily on first checkout. */
   stripeCustomerId: z.string().optional(),
+  /**
+   * Saved card (Phase E). Validated at signup via a SetupIntent and charged
+   * per-day at each order's cutoff — never charged upfront (critical rule #3).
+   * Mirrors the customer's default payment method.
+   */
+  defaultPaymentMethodId: z.string().optional(),
   /** Set by an admin after checking proof — unlocks the student plan. */
   studentVerifiedAt: z.date().optional(),
   /** Opt-in for caffeine/sugar insights (Phase 10). */

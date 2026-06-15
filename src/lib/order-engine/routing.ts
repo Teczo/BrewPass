@@ -26,6 +26,8 @@ export interface RoutingCandidate {
   menuItems: CoverageItem[];
   /** Orders already assigned to this vendor for the target date. */
   assignedCount: number;
+  /** Orders already assigned per KL delivery hour (Phase F slot caps). */
+  assignedByHour: Record<number, number>;
 }
 
 export interface RoutingRequest {
@@ -33,13 +35,23 @@ export interface RoutingRequest {
   preferredVendorId: ObjectId | null;
   /** Delivery point — the order's location. */
   point: GeoPoint;
-  /** ISO weekday (1–7) and HH:mm of the delivery. */
+  /** Local delivery date (YYYY-MM-DD), ISO weekday (1–7) and HH:mm of delivery. */
+  date: string;
   weekday: number;
   time: string;
   /** Drink coverage check uses the taxonomy values on the spec. */
   drink: { drink: string; milk: string };
+  /** When the assignment is happening, in KL local terms — drives the
+   * per-vendor accept-cutoff gate (Phase F). */
+  nowLocalDate: string;
+  nowLocalTime: string;
   /** Vendors to exclude (e.g. ones that already declined this order). */
   excludeVendorIds?: ObjectId[];
+}
+
+/** The KL delivery hour (0–23) of an HH:mm time. */
+export function deliveryHourOf(time: string): number {
+  return Number(time.slice(0, 2));
 }
 
 export type RoutingResult =
@@ -71,6 +83,36 @@ function isUnderCapacity(candidate: RoutingCandidate): boolean {
   return cap === undefined || candidate.assignedCount < cap;
 }
 
+/** Whether the delivery hour for this request is under the vendor's per-hour
+ * cap (Phase F). Hours without a configured cap are limited only by the daily
+ * cap. A cap of 0 closes that hour. */
+export function isUnderSlotCap(candidate: RoutingCandidate, request: RoutingRequest): boolean {
+  const slot = candidate.vendor.slotCapacities?.find(
+    (s) => s.hour === deliveryHourOf(request.time),
+  );
+  if (!slot) return true;
+  return (candidate.assignedByHour[slot.hour] ?? 0) < slot.cap;
+}
+
+/** Whether the vendor has marked the delivery date sold out (Phase F). */
+export function isNotSoldOut(vendor: Vendor, date: string): boolean {
+  return !vendor.soldOutDates?.includes(date);
+}
+
+/**
+ * The per-vendor accept-cutoff gate (Phase F). The vendor won't take an order
+ * being assigned after `orderAcceptCutoff` on the delivery day. Assignments
+ * before the delivery day (night-before generation) always pass; the delivery
+ * day already past never does.
+ */
+export function isVendorAcceptingAssignment(vendor: Vendor, request: RoutingRequest): boolean {
+  const cutoff = vendor.orderAcceptCutoff;
+  if (!cutoff) return true;
+  if (request.nowLocalDate < request.date) return true;
+  if (request.nowLocalDate > request.date) return false;
+  return request.nowLocalTime < cutoff;
+}
+
 /** All eligibility gates except the preferred/exclude bookkeeping. */
 export function isEligible(candidate: RoutingCandidate, request: RoutingRequest): boolean {
   const { vendor } = candidate;
@@ -79,6 +121,9 @@ export function isEligible(candidate: RoutingCandidate, request: RoutingRequest)
     isWithinServiceArea(vendor, request.point) &&
     isVendorOpenAt(vendor.operatingHours, request.weekday, request.time) &&
     isUnderCapacity(candidate) &&
+    isUnderSlotCap(candidate, request) &&
+    isNotSoldOut(vendor, request.date) &&
+    isVendorAcceptingAssignment(vendor, request) &&
     vendorCoversDrink(candidate.menuItems, request.drink.drink, request.drink.milk)
   );
 }

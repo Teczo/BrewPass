@@ -226,6 +226,20 @@ describe("evaluateCutoff", () => {
       reason: "quota_exhausted",
     });
   });
+
+  it("ignores the quota cap for card-on-file memberships (paid per coffee)", () => {
+    expect(
+      evaluateCutoff(
+        makeSubscription({ billingMode: "card_on_file", quota: { total: 12, used: 12 } }),
+      ),
+    ).toEqual({ action: "confirm" });
+  });
+
+  it("still requires an active membership for card-on-file", () => {
+    expect(
+      evaluateCutoff(makeSubscription({ billingMode: "card_on_file", status: "canceled" })),
+    ).toEqual({ action: "fail", reason: "subscription_inactive" });
+  });
 });
 
 describe("isModifiable", () => {

@@ -160,6 +160,61 @@ export async function syncSubscriptionFromStripe(
   return updated;
 }
 
+/** Stable membership key for a card-on-file subscriber (no Stripe recurring
+ * subscription backs it — coffee is charged per-day). */
+export function membershipSubKey(userId: ObjectId): string {
+  return `membership:${userId.toHexString()}`;
+}
+
+/**
+ * Activate (or refresh) a card-on-file membership after the signup
+ * SetupIntent saves a card (Phase E). No upfront charge (critical rule #3):
+ * the saved card is charged per-day at each order's cutoff. Stores the
+ * default payment method on the user for off-session charges.
+ */
+export async function activateCardOnFileMembership(args: {
+  userId: ObjectId;
+  plan: PlanDefinition;
+  stripeCustomerId: string;
+  paymentMethodId: string;
+  now?: Date;
+}): Promise<void> {
+  const { userId, plan, stripeCustomerId, paymentMethodId } = args;
+  const now = args.now ?? new Date();
+  // Cosmetic monthly window (card-on-file isn't quota-gated); ~1 month.
+  const periodEnd = new Date(now.getTime() + 31 * 24 * 60 * 60 * 1000);
+
+  const [subscriptions, users] = await Promise.all([subscriptionsCollection(), usersCollection()]);
+  const key = membershipSubKey(userId);
+  const existing = await subscriptions.findOne({ stripeSubscriptionId: key });
+
+  await subscriptions.updateOne(
+    { stripeSubscriptionId: key },
+    {
+      $set: {
+        userId,
+        plan: plan.plan,
+        stripeCustomerId,
+        billingMode: "card_on_file" as const,
+        status: "active" as const,
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        "quota.total": plan.quota,
+        ...(existing ? {} : { "quota.used": 0 }),
+        updatedAt: now,
+      },
+      $setOnInsert: { _id: new ObjectId(), createdAt: now },
+    },
+    { upsert: true },
+  );
+
+  await users.updateOne(
+    { _id: userId },
+    { $set: { defaultPaymentMethodId: paymentMethodId, stripeCustomerId, updatedAt: now } },
+  );
+}
+
 /** Synthetic per-member key under the company's single Stripe subscription —
  * keeps the unique stripeSubscriptionId index and the order engine working
  * unchanged for corporate members. */

@@ -62,11 +62,15 @@ export function buildOrder(args: {
   vendor: Vendor;
   /** How routing chose the vendor (Phase D). */
   assignmentMethod: Order["assignmentMethod"];
+  /** Vendor's price for the drink in sen, snapshotted for the cutoff charge
+   * (Phase E). Omitted when the vendor hasn't published a price. */
+  priceSen?: number | null;
   localDate: string;
   now: Date;
 }): Order {
-  const { subscription, preference, location, vendor, assignmentMethod, localDate, now } = args;
-  return {
+  const { subscription, preference, location, vendor, assignmentMethod, priceSen, localDate, now } =
+    args;
+  const order: Order = {
     _id: new ObjectId(),
     userId: subscription.userId,
     subscriptionId: subscription._id,
@@ -88,6 +92,8 @@ export function buildOrder(args: {
     createdAt: now,
     updatedAt: now,
   };
+  if (priceSen !== undefined && priceSen !== null) order.priceSen = priceSen;
+  return order;
 }
 
 export type CutoffDecision =
@@ -97,12 +103,19 @@ export type CutoffDecision =
 /**
  * What the cutoff job should do with a scheduled order. The quota check is
  * re-verified atomically in the database; this is the fast-path decision.
+ *
+ * Card-on-file memberships (Phase E) pay per coffee and are not quota-gated —
+ * the plan quota is an optional cap, deferred — so only the active check
+ * applies to them. Prepaid plans (corporate/legacy) keep the quota gate.
  */
 export function evaluateCutoff(subscription: Subscription | null): CutoffDecision {
   if (!subscription || (subscription.status !== "active" && subscription.status !== "trialing")) {
     return { action: "fail", reason: "subscription_inactive" };
   }
-  if (subscription.quota.used >= subscription.quota.total) {
+  if (
+    subscription.billingMode !== "card_on_file" &&
+    subscription.quota.used >= subscription.quota.total
+  ) {
     return { action: "fail", reason: "quota_exhausted" };
   }
   return { action: "confirm" };
