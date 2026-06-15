@@ -91,6 +91,15 @@ export function vendorToJson(vendor: Vendor) {
     operatingHours: vendor.operatingHours ?? null,
     serviceAreaRadiusKm: vendor.serviceAreaRadiusKm ?? null,
     reviewNote: vendor.reviewNote ?? null,
+    // Phase G quality
+    quality: {
+      ratingScore: vendor.ratingScore ?? null,
+      ratingCount: vendor.ratingCount ?? 0,
+      acceptanceRate: vendor.acceptanceRate ?? null,
+      onTimeRate: vendor.onTimeRate ?? null,
+      suspended: Boolean(vendor.qualitySuspendedAt),
+      flagReason: vendor.qualityFlagReason ?? null,
+    },
     // Phase F capacity controls
     dailyCapacity: vendor.dailyCapacity ?? null,
     slotCapacities: vendor.slotCapacities ?? [],

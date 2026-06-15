@@ -119,10 +119,34 @@ export const vendorSchema = baseDocumentSchema.extend({
    */
   orderAcceptCutoff: localTimeSchema.optional(),
   /**
-   * Aggregate rating (1–5), the routing tiebreak. Unset until the vendor
-   * has ratings (Phase G populates and maintains it).
+   * Aggregate rating (1–5), part of the routing quality tiebreak. Unset until
+   * the vendor has ratings (Phase G populates and maintains it from raw
+   * counters below).
    */
   ratingScore: z.number().min(0).max(5).optional(),
+  /**
+   * Raw quality counters (Phase G). Derived rates (ratingScore,
+   * acceptanceRate, onTimeRate) are recomputed from these on every quality
+   * event, so the aggregates can always be rebuilt from the counters.
+   */
+  ratingSum: z.number().int().nonnegative().optional(),
+  ratingCount: z.number().int().nonnegative().optional(),
+  /** Implicit accepts (orders locked without a decline) vs declines. */
+  acceptedCount: z.number().int().nonnegative().optional(),
+  declinedCount: z.number().int().nonnegative().optional(),
+  /** Deliveries and how many were on time (Phase G SLA). */
+  deliveredCount: z.number().int().nonnegative().optional(),
+  onTimeCount: z.number().int().nonnegative().optional(),
+  /** Derived rates in [0,1]; unset until there is data. */
+  acceptanceRate: z.number().min(0).max(1).optional(),
+  onTimeRate: z.number().min(0).max(1).optional(),
+  /**
+   * Auto-suspension from routing for poor quality (Phase G "flag + suspend").
+   * Set when metrics fall below threshold with enough samples; an admin
+   * clears it. Routing skips quality-suspended vendors.
+   */
+  qualitySuspendedAt: z.date().optional(),
+  qualityFlagReason: z.string().optional(),
   /** Application/review trail (Phase B onboarding). */
   appliedAt: z.date().optional(),
   reviewedAt: z.date().optional(),

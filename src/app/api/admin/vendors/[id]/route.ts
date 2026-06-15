@@ -19,6 +19,9 @@ const updateVendorSchema = z.object({
   addStaffEmail: z.string().email().optional(),
   /** Unlink a staff member by Auth0 sub. */
   removeStaffSub: z.string().optional(),
+  /** Phase G: lift an auto quality-suspension so routing can use the vendor
+   * again (counters are kept; the vendor can rebuild their score). */
+  clearQualityFlag: z.literal(true).optional(),
 });
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -76,6 +79,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     await vendors.updateOne(
       { _id: vendorId },
       { $pull: { portalUserSubs: input.removeStaffSub }, $set: { updatedAt: now } },
+    );
+  }
+
+  if (input.clearQualityFlag) {
+    await vendors.updateOne(
+      { _id: vendorId },
+      { $unset: { qualitySuspendedAt: "", qualityFlagReason: "" }, $set: { updatedAt: now } },
     );
   }
 
