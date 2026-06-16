@@ -174,6 +174,11 @@ export async function ensureIndexes(): Promise<void> {
       { unique: true, partialFilterExpression: { cadence: "daily_batch" } },
     ),
     deliveries.createIndex({ orderId: 1 }, { unique: true }),
+    // Courier webhooks (v2.1) resolve the delivery by the provider's order ref.
+    deliveries.createIndex(
+      { courierOrderId: 1 },
+      { partialFilterExpression: { courierOrderId: { $exists: true } } },
+    ),
     signals.createIndex({ userId: 1, date: 1 }),
     // One preference signal per confirmed order.
     signals.createIndex({ orderId: 1 }, { unique: true }),
