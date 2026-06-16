@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { DeliveryTracker } from "@/components/delivery-tracker";
 import { HealthCard } from "@/components/health-card";
 import { RateOrder } from "@/components/rate-order";
 import { UpcomingOrder } from "@/components/upcoming-order";
@@ -151,6 +152,10 @@ export default async function DashboardPage() {
           addOnOptions={addOnOptions}
           drinkOptions={drinkOptionsFrom(await loadActiveTaxonomy()) ?? DEFAULT_DRINK_OPTIONS}
         />
+      )}
+
+      {upcomingOrder?.status === "out_for_delivery" && (
+        <DeliveryTracker orderId={upcomingOrder._id.toHexString()} />
       )}
 
       {hasLiveSubscription && (

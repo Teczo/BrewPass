@@ -7,7 +7,21 @@ import type { OrderJson } from "@/lib/serializers";
 
 export type VendorOrderJson = OrderJson & {
   customerName: string;
-  delivery: { status: string; riderId: string | null } | null;
+  delivery: {
+    status: string;
+    provider: string;
+    riderId: string | null;
+    trackingUrl: string | null;
+    driverName: string | null;
+  } | null;
+};
+
+const COURIER_STATUS_LABEL: Record<string, string> = {
+  pending: "Finding a driver",
+  assigned: "Driver assigned",
+  picked_up: "Picked up",
+  delivered: "Delivered",
+  failed: "Failed",
 };
 
 const COLUMNS = [
@@ -76,6 +90,30 @@ function DeliveryControls({
           Failed
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Courier-dispatched orders (v2.1) are read-only here — delivery is confirmed
+ * by the courier webhook, not a vendor button. */
+function CourierStatus({ order }: { order: VendorOrderJson }) {
+  const status = order.delivery?.status ?? "pending";
+  return (
+    <div className="mt-1 flex flex-col gap-1 border-t border-neutral-100 pt-2 text-sm">
+      <p className="text-neutral-600">
+        Courier · {COURIER_STATUS_LABEL[status] ?? status}
+        {order.delivery?.driverName && ` · ${order.delivery.driverName}`}
+      </p>
+      {order.delivery?.trackingUrl && (
+        <a
+          href={order.delivery.trackingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-amber-800 hover:underline"
+        >
+          Track delivery →
+        </a>
+      )}
     </div>
   );
 }
@@ -173,13 +211,16 @@ export function VendorBoard({ orders }: { orders: VendorOrderJson[] }) {
                       {busyId === order.id ? "Updating…" : column.actionLabel}
                     </button>
                   )}
-                  {order.status === "out_for_delivery" && (
-                    <DeliveryControls
-                      order={order}
-                      busy={busyId !== null}
-                      onAction={(body) => deliveryAction(order.id, body)}
-                    />
-                  )}
+                  {order.status === "out_for_delivery" &&
+                    (!order.delivery || order.delivery.provider === "manual" ? (
+                      <DeliveryControls
+                        order={order}
+                        busy={busyId !== null}
+                        onAction={(body) => deliveryAction(order.id, body)}
+                      />
+                    ) : (
+                      <CourierStatus order={order} />
+                    ))}
                 </article>
               ))}
             </section>

@@ -172,5 +172,11 @@ export const vendorSchema = baseDocumentSchema.extend({
    * is always delivery-gated (critical rule #4).
    */
   payoutCadence: z.enum(["per_order", "daily_batch"]).optional(),
+  /**
+   * Courier provider for this vendor's handoffs (v2.1). Unset → the configured
+   * platform primary (Lalamove) when it's available, else `manual`. `manual`
+   * is for vendors who self-deliver. Resolved by `resolveCourierProvider()`.
+   */
+  courierProvider: z.enum(["lalamove", "grab", "manual"]).optional(),
 });
 export type Vendor = z.infer<typeof vendorSchema>;

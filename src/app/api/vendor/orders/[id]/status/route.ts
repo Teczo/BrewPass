@@ -2,8 +2,10 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
+import { ordersCollection, usersCollection } from "@/lib/collections";
+import { dispatchForHandoff } from "@/lib/courier/service";
 import { sendSms } from "@/lib/notifications";
+import { refundFailedDelivery } from "@/lib/payments/refund";
 import { orderToJson } from "@/lib/serializers";
 import { getCurrentVendorContext } from "@/lib/vendors";
 
@@ -21,15 +23,17 @@ const VALID_FROM: Record<string, "confirmed" | "preparing"> = {
   out_for_delivery: "preparing",
 };
 
-function isDuplicateKeyError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === 11000;
-}
-
 /**
  * Vendor fulfillment: start preparing a confirmed order, or mark it ready
  * and hand it off to delivery. Updates are scoped to the vendor's own
  * orders and filter on the expected current status, so stale or repeated
  * clicks can't skip steps.
+ *
+ * On handoff (v2.1) the order is dispatched to a real courier behind the
+ * `CourierAdapter` abstraction (or kept on the legacy manual path for vendors
+ * who self-deliver). If courier dispatch fails after retries, the order is
+ * failed and the day refunded — the chosen dispatch-failure policy — so it
+ * never silently stalls.
  */
 export async function POST(request: Request, context: RouteContext) {
   const vendorContext = await getCurrentVendorContext();
@@ -67,20 +71,35 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  // Handoff creates the Delivery record (rider assignment is a manual
-  // step until Phase 5 tooling). Unique on orderId — re-clicks are no-ops.
   if (parsed.data.status === "out_for_delivery") {
-    const deliveries = await deliveriesCollection();
-    try {
-      await deliveries.insertOne({
-        _id: new ObjectId(),
-        orderId: updated._id,
-        status: "pending",
-        createdAt: now,
-        updatedAt: now,
-      });
-    } catch (error) {
-      if (!isDuplicateKeyError(error)) throw error;
+    // Dispatch a courier (or create the manual delivery). Idempotent on
+    // orderId — re-clicks/retries never double-dispatch.
+    const outcome = await dispatchForHandoff(updated, vendorContext.vendor, now);
+
+    if (outcome.status === "failed") {
+      // No courier after retries → fail the order and refund the day.
+      await orders.updateOne(
+        { _id: updated._id, status: "out_for_delivery" },
+        {
+          $set: {
+            status: "failed",
+            failureReason: `courier_dispatch_failed: ${outcome.reason}`.slice(0, 300),
+            updatedAt: now,
+          },
+        },
+      );
+      try {
+        await refundFailedDelivery(updated._id, now);
+      } catch (error) {
+        console.error(`Refund after dispatch failure ${updated._id.toHexString()} failed:`, error);
+      }
+      return NextResponse.json(
+        {
+          error:
+            "Couldn't dispatch a courier for this order. It was cancelled and the customer refunded.",
+        },
+        { status: 502 },
+      );
     }
 
     // Optional SMS — best-effort, never blocks the handoff.

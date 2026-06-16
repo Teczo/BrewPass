@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
 import { ordersCollection, subscriptionsCollection, vendorsCollection } from "@/lib/collections";
+import { adminMarkDelivered, adminRedispatchCourier } from "@/lib/courier/service";
 import { refundChargedOrder } from "@/lib/payments/refund";
 
 export const runtime = "nodejs";
@@ -18,6 +19,9 @@ const actionSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("refund_quota") }),
   z.object({ action: z.literal("refund_charge") }),
+  // v2.1 courier overrides for stuck courier orders.
+  z.object({ action: z.literal("courier_redispatch") }),
+  z.object({ action: z.literal("courier_mark_delivered") }),
 ]);
 
 /** Return one quota credit, at most once per order (quotaRefundedAt guard). */
@@ -100,6 +104,26 @@ export async function POST(request: Request, context: RouteContext) {
         { error: "Order not found or already out for delivery." },
         { status: 409 },
       );
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (input.action === "courier_redispatch") {
+    const result = await adminRedispatchCourier(orderId, now);
+    if (!result.ok) {
+      return NextResponse.json({ error: `Re-dispatch failed: ${result.reason}` }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true, outcome: result.outcome });
+  }
+
+  if (input.action === "courier_mark_delivered") {
+    const result = await adminMarkDelivered(orderId, now);
+    if (!result.ok) {
+      const message =
+        result.reason === "not_out_for_delivery"
+          ? "Only an order that's out for delivery can be marked delivered."
+          : `Mark delivered failed: ${result.reason}`;
+      return NextResponse.json({ error: message }, { status: 409 });
     }
     return NextResponse.json({ ok: true });
   }

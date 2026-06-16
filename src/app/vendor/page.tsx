@@ -5,7 +5,7 @@ import { VendorBoard, type VendorOrderJson } from "@/components/vendor-board";
 import { VendorUpcoming, type UpcomingOrderJson } from "@/components/vendor-upcoming";
 import { getSession } from "@/lib/auth0";
 import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
-import type { Vendor } from "@/lib/models";
+import { deliveryProvider, type Vendor } from "@/lib/models";
 import { orderToJson } from "@/lib/serializers";
 import { localDateOf, tomorrowLocalDate } from "@/lib/time";
 import { getOrCreateCurrentUser } from "@/lib/users";
@@ -197,7 +197,15 @@ export default async function VendorPortalPage() {
     return {
       ...orderToJson(doc),
       customerName: nameById.get(doc.userId.toHexString()) ?? "Customer",
-      delivery: delivery ? { status: delivery.status, riderId: delivery.riderId ?? null } : null,
+      delivery: delivery
+        ? {
+            status: delivery.status,
+            provider: deliveryProvider(delivery),
+            riderId: delivery.riderId ?? null,
+            trackingUrl: delivery.trackingUrl ?? null,
+            driverName: delivery.driverName ?? null,
+          }
+        : null,
     };
   });
 

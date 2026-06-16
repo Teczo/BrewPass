@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { deliveriesCollection, ordersCollection, usersCollection } from "@/lib/collections";
 import { sendSms } from "@/lib/notifications";
+import { deliveryProvider } from "@/lib/models";
 import { handleOrderDelivered } from "@/lib/payments/payout";
 import { refundFailedDelivery } from "@/lib/payments/refund";
 import { isOnTime } from "@/lib/quality";
@@ -62,6 +63,20 @@ export async function POST(request: Request, context: RouteContext) {
   const now = new Date();
   const deliveries = await deliveriesCollection();
   const input = parsed.data;
+
+  // v2.1: these manual controls (assign rider / mark delivered / mark failed)
+  // only apply to the legacy `manual` provider. Courier-dispatched deliveries
+  // are driven by the verified courier webhook, not a human click (rule #4).
+  const delivery = await deliveries.findOne({ orderId: order._id });
+  if (delivery && deliveryProvider(delivery) !== "manual") {
+    return NextResponse.json(
+      {
+        error:
+          "This order is courier-dispatched — delivery is confirmed automatically by the courier.",
+      },
+      { status: 409 },
+    );
+  }
 
   if (input.action === "assign") {
     const updated = await deliveries.findOneAndUpdate(
