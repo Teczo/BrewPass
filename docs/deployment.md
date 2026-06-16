@@ -1,11 +1,15 @@
 # BrewPass — Production Deployment Guide (v2 Marketplace)
 
-This guide covers the **v2 multi-vendor marketplace**. It supersedes the
-single-vendor v1 guide: v2 adds a vendor portal, an order-routing engine,
-a standardized menu taxonomy, the AI vendor recommender, monthly lists,
-and **Stripe Connect** payouts. If you ran the v1 deployment already, the
-new pieces are §4b (Connect), §9b (AI recommender), the third cron in §2,
-and the first-run **migrations** in §10 — skim those and skip the rest.
+This guide covers the **v2 multi-vendor marketplace** (including the **v2.1**
+courier + AI-menu additions). It supersedes the single-vendor v1 guide: v2
+adds a vendor portal, an order-routing engine, a standardized menu taxonomy,
+the AI vendor recommender, monthly lists, and **Stripe Connect** payouts;
+v2.1 adds **courier-integrated delivery + in-app tracking** (§6b) and
+**AI-assisted menu onboarding** (folded into §9b). If you ran the v1
+deployment already, the new pieces are §4b (Connect), §6b (courier),
+§9b (Anthropic), the third cron in §2, and the first-run **migrations** in
+§10 — skim those and skip the rest. All of v2.1 is optional and degrades to
+the v2 behaviour when unconfigured.
 
 One Vercel project hosts everything (frontend pages, API routes, cron
 jobs). Every other service is SaaS you configure once and connect via
@@ -21,11 +25,12 @@ Architecture recap:
 | Subscriptions + card             | Stripe               | §4                            |
 | Vendor payouts                   | Stripe **Connect**   | §4b                           |
 | Push notifications               | Firebase (FCM)       | §5                            |
-| Geocoding + routing              | Google Maps Platform | §6                            |
+| Geocoding, routing + map         | Google Maps Platform | §6                            |
+| Courier delivery (optional)      | Lalamove             | §6b                           |
 | SMS (optional)                   | Twilio               | §7                            |
 | Email (optional)                 | Resend               | §8                            |
 | Error monitoring                 | Sentry               | §9                            |
-| AI vendor recommender (optional) | Anthropic            | §9b                           |
+| AI recommender + menu onboarding | Anthropic            | §9b                           |
 | Scheduled jobs                   | Vercel Cron          | automatic from vercel.json    |
 | Weather                          | Open-Meteo           | nothing — keyless             |
 | File storage                     | Vercel Blob          | not used yet; add when needed |
@@ -264,6 +269,71 @@ to geocode **vendor addresses** and to compute **routing distances**
 (subscriber ↔ vendor) for the routing engine and the AI recommender. It's
 effectively required for vendor onboarding and order routing.
 
+3. **Client map key (v2.1 — for in-app delivery tracking).** The live
+   tracking map (§6b) renders in the browser, so it needs a **separate**,
+   browser-exposed key. Enable the **Maps JavaScript API**, create a second
+   key, and restrict it by **HTTP referrer** (your domain) — never reuse the
+   server geocoding key here.
+
+```
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=...
+```
+
+If unset, tracking falls back to the courier's hosted tracking link instead
+of the embedded map — nothing breaks.
+
+## 6b. Courier delivery — Lalamove (optional, v2.1)
+
+By default vendors **self-deliver** (manual mode): the vendor marks the
+order delivered in their portal. v2.1 adds on-demand courier dispatch so a
+vendor can hand the coffee to a courier instead, with live in-app tracking.
+Lalamove is the implemented adapter; a vendor with no courier configured
+stays on the manual path, exactly like the best-effort SMS/email senders.
+
+1. https://developers.lalamove.com → create an app → get the API key/secret
+   for the **sandbox** first, then production. Set:
+
+```
+LALAMOVE_API_KEY=...
+LALAMOVE_API_SECRET=...
+LALAMOVE_BASE_URL=https://rest.sandbox.lalamove.com   # prod: https://rest.lalamove.com
+LALAMOVE_MARKET=MY
+LALAMOVE_SERVICE_TYPE=MOTORCYCLE
+LALAMOVE_WEBHOOK_SECRET=                               # falls back to LALAMOVE_API_SECRET
+COURIER_PLATFORM_PHONE=+60123456789                    # sender phone on dispatch
+```
+
+The adapter is "configured" only when both `LALAMOVE_API_KEY` and
+`LALAMOVE_API_SECRET` are set; `BASE_URL`/`MARKET`/`SERVICE_TYPE` have the
+defaults shown.
+
+2. **Webhook** (the money-gating delivery signal — treated like the Stripe
+   webhook): in the Lalamove dashboard register the status webhook to:
+   - URL: `https://<domain>/api/webhooks/courier/lalamove`
+   - The handler verifies the signature, is idempotent, and tolerates
+     retries/out-of-order events. A `delivered` event **releases the
+     (delivery-gated) payout**; a `failed` event **refunds the day**. It
+     returns 2xx for events it can't act on and 5xx only for genuine
+     failures it wants retried — so the provider keeps the URL enabled.
+3. **Per-vendor selection:** a vendor's `courierProvider` (`lalamove` |
+   `manual`) is set in their portal. At handoff a courier vendor's order is
+   dispatched — re-quoted at dispatch time, with a per-order idempotency key
+   so the provider never double-books; manual vendors get the legacy
+   pending-delivery flow.
+4. **Tracking:** customers track in-app at the order's tracking view, backed
+   by `GET /api/orders/:id/tracking`, which refreshes a stale driver
+   position from the courier on read and falls back to the hosted link. The
+   embedded map needs `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (§6).
+5. **Dispatch-failure policy:** if a courier dispatch fails after its
+   retries, the order is failed and the day refunded (no coffee → no
+   charge). Admins can re-dispatch or force-deliver a stuck order from
+   `/admin` (§12).
+
+Test in sandbox: take a vendor to `courierProvider: lalamove`, push an order
+to handoff, confirm a courier order is created, then POST a signed
+`delivered` event to the webhook and confirm the payout released; POST a
+`failed` event on another order and confirm the refund.
+
 ## 7. Twilio (optional — delivery SMS)
 
 1. https://console.twilio.com → get Account SID + Auth Token, buy/claim
@@ -305,21 +375,29 @@ SENTRY_AUTH_TOKEN=sntrys_...
 All optional — the app runs without Sentry; with the DSN set, client,
 server, and edge errors are captured automatically.
 
-## 9b. Anthropic (optional — AI vendor recommender)
+## 9b. Anthropic (optional — AI recommender + menu onboarding)
 
-The hybrid vendor selection lets a subscriber answer a short priorities
-questionnaire (proximity, price, speed, rating, drink) and get an AI-
-recommended vendor. The recommendation is **advisory** — it takes effect
-only after the user reviews and confirms it.
+One key powers two server-only AI features:
+
+- **AI vendor recommender** — the hybrid selection lets a subscriber answer
+  a short priorities questionnaire (proximity, price, speed, rating, drink)
+  and get a recommended vendor. The recommendation is **advisory** — it
+  takes effect only after the user reviews and confirms it.
+- **AI-assisted menu onboarding (Phase C.5)** — a vendor uploads a menu
+  screenshot (e.g. their Grab/Uber listing) and the model extracts the items
+  and maps each onto the platform taxonomy, turning onboarding into a quick
+  review. The vendor reviews/edits the draft and confirms before anything is
+  published; the screenshot is processed in-request and **never persisted**.
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-If this key is **unset** (or a call fails), the app automatically falls
-back to a deterministic, priority-weighted scorer — selection never blocks
-on the model. So this key is genuinely optional; set it to enable the
-natural-language reasoning path. The recommender is server-only.
+If this key is **unset** (or a call fails): the recommender automatically
+falls back to a deterministic, priority-weighted scorer (selection never
+blocks on the model), and menu onboarding cleanly reports that AI extraction
+is unavailable so the vendor maps their menu manually. So the key is
+genuinely optional — set it to enable both AI paths. Both are server-only.
 
 ## 10. First-run setup (indexes, migrations, first vendor)
 
@@ -329,7 +407,9 @@ idempotent and safe to re-run):
 
 1. **Set up DB indexes** — creates every index the app relies on, including
    the unique keys that make order generation, payouts, and webhook
-   handling idempotent. Do not skip this.
+   handling idempotent. Do not skip this. **Re-run it after upgrading to
+   v2.1** too: it adds the new `vendorMenuDrafts` and courier-delivery
+   indexes (it's idempotent, so re-running is always safe).
 2. **Seed menu taxonomy** (Phase C) — seeds the canonical `OptionTaxonomy`
    (drinks, sizes, milks, add-ons, strength) that all subscriber
    preferences and vendor menus reference, and absorbs any legacy v1
@@ -353,11 +433,13 @@ v1 code.
   capacity, service-area radius) → approve it in `/admin`. That is Vendor #1.
 - **Upgrade:** Phase A already created Vendor #1 from your v1 café.
 
-For each active vendor (including Vendor #1): set up the **menu** (map
-offerings to the taxonomy, prices, availability) at `/vendor/menu`, and
-complete **Connect onboarding** (§4b) at `/vendor/profile` so payouts can
-flow. Orders won't route to a vendor that is offline, has no menu coverage
-for the drink, or is over capacity.
+For each active vendor (including Vendor #1): set up the **menu** at
+`/vendor/menu` (map offerings to the taxonomy, prices, availability — or use
+**AI menu onboarding** to extract it from a screenshot if §9b is
+configured), choose a **delivery mode** (self-deliver vs Lalamove courier,
+§6b), and complete **Connect onboarding** (§4b) at `/vendor/profile` so
+payouts can flow. Orders won't route to a vendor that is offline, has no
+menu coverage for the drink, or is over capacity.
 
 New third-party vendors self-serve: any logged-in user applies at
 `/vendor/apply` → an admin approves in `/admin` (this grants the `vendor`
@@ -394,6 +476,14 @@ https://<domain>/api/cron/generate-orders` → JSON summary
       produced **no** transfer
 - [ ] Dispute path: trigger a test `charge.dispute.created` and confirm the
       user refund + transfer reversal
+- [ ] Courier (if configured): set a vendor to `lalamove`, push an order to
+      handoff → a courier order is created; POST a signed `delivered` event
+      to `/api/webhooks/courier/lalamove` → payout releases; a `failed`
+      event on another order → the day is refunded
+- [ ] AI menu onboarding (if `ANTHROPIC_API_KEY` set): upload a menu
+      screenshot at `/vendor/menu`, review the extracted draft, confirm, and
+      see the items published (and that with the key unset it cleanly tells
+      you to map manually)
 - [ ] Sentry: throw a test error, see it in the dashboard
 
 ## 12. Ongoing operations
@@ -415,7 +505,10 @@ https://<domain>/api/cron/generate-orders` → JSON summary
   application, Stripe test-mode webhook, and a Connect test platform; never
   share webhook secrets between environments. Re-run the §10 admin setup on
   each new database.
+- **Courier delivery**: for courier vendors, delivery is confirmed by the
+  signed courier webhook (§6b), which gates payout. When the courier
+  completes but the webhook never lands, use the `/admin` order tools to
+  **force-deliver** (releases payout once) or **re-dispatch** a stuck order.
 - **Mobile apps**: see `docs/mobile.md` once the web deployment is stable —
-  the same web build (now including the vendor portal) loads in the shell.
-  </content>
-  </invoke>
+  the same web build (now including the vendor and tracking UIs) loads in
+  the shell.

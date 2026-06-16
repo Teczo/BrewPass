@@ -96,8 +96,9 @@ admin overrides.
 # v2 Marketplace Addendum — Routing, Connect & Payouts
 
 Covers the v2 surfaces added on top of the Phase 9 review above:
-multi-vendor routing, Stripe Connect, per-day charging, and delivery-gated
-payouts. The v1 controls above still apply unchanged.
+multi-vendor routing, Stripe Connect, per-day charging, delivery-gated
+payouts, and the v2.1 courier-delivery + AI-menu-onboarding additions. The
+v1 controls above still apply unchanged.
 
 ## Controls verified in place (v2)
 
@@ -160,13 +161,37 @@ payouts. The v1 controls above still apply unchanged.
   vendor ids so existing order references stay valid; the operator's own
   café becomes Vendor #1 with no special-casing.
 
-## Known gaps / accepted (v2)
+**Courier delivery & AI menu onboarding (v2.1)**
+
+- The courier webhook (`/api/webhooks/courier/:provider`) is the
+  money-gating delivery signal and is handled like the Stripe webhook:
+  **signature verified** before processing, each state transition claimed
+  exactly once via the `(source, eventId)` index, out-of-order tolerant
+  (only ever advances the state machine). `delivered` releases the
+  delivery-gated payout; `failed` refunds the day — both idempotent.
+- For courier vendors this removes the v1 "café staff mark delivered without
+  rider confirmation" trust gap — delivery is confirmed by the courier, not
+  a human button. Manual (self-deliver) vendors retain the staff-confirmed
+  path. Admin force-deliver / re-dispatch go through the _same_ idempotent
+  transition, so payout still releases exactly once.
+- Courier dispatch carries a per-order idempotency key (no double-booking);
+  a dispatch that fails after retries fails + refunds the order.
+- AI menu onboarding is **propose-only**: the uploaded screenshot is
+  processed in-request and **never persisted**, the module touches menu data
+  only (never routing/charging/payout), and nothing is published until the
+  vendor reviews and confirms — extracted rows flow through the _same_ menu
+  write/validation gate as the manual editor.
+
+## Known gaps / accepted (v2 / v2.1)
 
 1. `account.updated` for Express accounts must reach the webhook — the
    endpoint has to listen to **connected-account** events (see
    `docs/deployment.md` §4). If misconfigured, vendors onboard but
    `payouts_enabled` never flips and payouts silently hold. Verify in the
    post-deploy checklist.
-2. Failed-card-at-cutoff policy and routing weightings are business
-   decisions; confirm before hardcoding (critical rule 11).
-3. Rate limiting and CSP gaps from the v1 review still stand.
+2. Failed-card-at-cutoff policy, courier dispatch-failure policy, and
+   routing weightings are business decisions; confirm before hardcoding
+   (critical rule 11).
+3. Rate limiting and CSP gaps from the v1 review still stand. The browser
+   tracking map needs a **referrer-restricted** `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
+   distinct from the server geocoding key (see `docs/deployment.md` §6).
