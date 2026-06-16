@@ -90,3 +90,83 @@ admin overrides.
    environment provisioning.
 5. Stripe money refunds are manual (dashboard) by design; in-app
    "refund" returns quota credit only.
+
+---
+
+# v2 Marketplace Addendum — Routing, Connect & Payouts
+
+Covers the v2 surfaces added on top of the Phase 9 review above:
+multi-vendor routing, Stripe Connect, per-day charging, and delivery-gated
+payouts. The v1 controls above still apply unchanged.
+
+## Controls verified in place (v2)
+
+**Stripe Connect / payouts (critical rules 4, 9)**
+
+- Vendors are **Express** connected accounts; bank/KYC is collected and
+  held by Stripe — the app stores only the account id and the mirrored
+  `charges_enabled` / `payouts_enabled` flags. No payout details touch our DB.
+- Payouts are **delivery-gated**: a transfer is created only after an order
+  is `delivered`, net of commission. No delivery → no transfer, regardless
+  of `payoutCadence` (`per_order` vs `daily_batch` only changes sweep
+  frequency).
+- Charges and transfers are **separate** (not card auth holds): the user is
+  charged at cutoff into the platform balance; the vendor's net is
+  transferred post-delivery.
+- All transfer/refund/reversal actions carry **idempotency keys** keyed per
+  order; the `daily_batch` sweep is guarded by a unique
+  `(vendorId, period, daily_batch)` payout index — re-runs and duplicate
+  delivery events cannot double-pay.
+- `account.updated` and `charge.dispute.created` go through the **same
+  signed webhook** as billing (signature verified, event id claimed once via
+  the unique `(source, eventId)` index). A dispute reverses the vendor
+  transfer and refunds the user.
+
+**Per-day charging (critical rule 3)**
+
+- Card is saved at signup via a SetupIntent (`checkout.session.completed`) —
+  no upfront/monthly charge. The user is charged **per day at cutoff**,
+  server-side, into the platform balance. No client-supplied amounts.
+
+**Routing engine (critical rules 2, 5, 6, 7)**
+
+- Routing, charging, payouts, and refunds are **server-only**; clients
+  request, the server decides.
+- One order per `(userId, date)` (unique index) holds across the new
+  vendor-assignment + reassignment paths — re-running generation can't
+  double-generate.
+- Subscriber preferences and monthly lists reference the **OptionTaxonomy**,
+  not a single vendor's live menu, keeping auto-orders portable across
+  reassignment. Vendor, drink spec, and price are **snapshotted** at
+  order/list confirmation.
+- AI and manual vendor selection, and the monthly list, take effect **only
+  after the user confirms**; the AI recommender is advisory and server-only,
+  with a deterministic fallback when `ANTHROPIC_API_KEY` is unset.
+
+**Access control (v2)**
+
+- Vendor portal authority = membership in `Vendor.portalUserSubs`
+  (owner added on apply, granted on approval), not the self-describable role
+  field; vendor reads/writes are scoped to their `vendorId`.
+- The pending → active/rejected application transition is claimed atomically
+  (concurrent reviews can't both win); approval grants the `vendor` role but
+  never overrides an `admin`.
+- Vendor applications validated with Zod; addresses geocoded server-side.
+
+**Migrations (critical rules 8, 10)**
+
+- Phase A (cafés → vendors) and Phase C (taxonomy seed) are **idempotent and
+  reversible**, admin-only, and unit-tested. Phase A preserves café `_id`s as
+  vendor ids so existing order references stay valid; the operator's own
+  café becomes Vendor #1 with no special-casing.
+
+## Known gaps / accepted (v2)
+
+1. `account.updated` for Express accounts must reach the webhook — the
+   endpoint has to listen to **connected-account** events (see
+   `docs/deployment.md` §4). If misconfigured, vendors onboard but
+   `payouts_enabled` never flips and payouts silently hold. Verify in the
+   post-deploy checklist.
+2. Failed-card-at-cutoff policy and routing weightings are business
+   decisions; confirm before hardcoding (critical rule 11).
+3. Rate limiting and CSP gaps from the v1 review still stand.
