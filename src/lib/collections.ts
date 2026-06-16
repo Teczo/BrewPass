@@ -15,6 +15,7 @@ import type {
   Subscription,
   User,
   Vendor,
+  VendorMenuDraft,
   VendorMenuItem,
   VendorPayout,
   WebhookEvent,
@@ -70,6 +71,10 @@ export async function vendorMenuItemsCollection(): Promise<Collection<VendorMenu
   return (await getDb()).collection<VendorMenuItem>("vendorMenuItems");
 }
 
+export async function vendorMenuDraftsCollection(): Promise<Collection<VendorMenuDraft>> {
+  return (await getDb()).collection<VendorMenuDraft>("vendorMenuDrafts");
+}
+
 export async function deliveriesCollection(): Promise<Collection<Delivery>> {
   return (await getDb()).collection<Delivery>("deliveries");
 }
@@ -103,6 +108,7 @@ export async function ensureIndexes(): Promise<void> {
     ratings,
     taxonomy,
     menuItems,
+    menuDrafts,
     deliveries,
     signals,
     webhooks,
@@ -118,6 +124,7 @@ export async function ensureIndexes(): Promise<void> {
     ratingsCollection(),
     optionTaxonomyCollection(),
     vendorMenuItemsCollection(),
+    vendorMenuDraftsCollection(),
     deliveriesCollection(),
     preferenceSignalsCollection(),
     webhookEventsCollection(),
@@ -152,6 +159,8 @@ export async function ensureIndexes(): Promise<void> {
     // One menu item per (vendor, taxonomy slug); the menu editor upserts
     // on this key. Listing a vendor's whole menu uses the prefix.
     menuItems.createIndex({ vendorId: 1, taxonomySlug: 1 }, { unique: true }),
+    // One AI-onboarding menu draft per vendor; extraction upserts on this key.
+    menuDrafts.createIndex({ vendorId: 1 }, { unique: true }),
     // One rating per order (idempotent submit); vendor aggregation reads by
     // vendorId.
     ratings.createIndex({ orderId: 1 }, { unique: true }),

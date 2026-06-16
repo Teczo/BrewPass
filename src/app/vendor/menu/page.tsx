@@ -2,9 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { VendorMenuManager, type MenuSection } from "@/components/vendor-menu-manager";
+import { VendorMenuOnboarding } from "@/components/vendor-menu-onboarding";
 import { getSession } from "@/lib/auth0";
-import { vendorMenuItemsCollection } from "@/lib/collections";
-import { vendorMenuItemToJson } from "@/lib/serializers";
+import { vendorMenuDraftsCollection, vendorMenuItemsCollection } from "@/lib/collections";
+import { mappableOptionsFrom } from "@/lib/menu-extraction";
+import { vendorMenuDraftToJson, vendorMenuItemToJson } from "@/lib/serializers";
 import { loadActiveTaxonomy } from "@/lib/taxonomy";
 import { getCurrentVendorContext } from "@/lib/vendors";
 
@@ -20,9 +22,10 @@ export default async function VendorMenuPage() {
   const context = await getCurrentVendorContext();
   if (!context) redirect("/vendor");
 
-  const [taxonomy, menuItems] = await Promise.all([
+  const [taxonomy, menuItems, drafts] = await Promise.all([
     loadActiveTaxonomy(),
     vendorMenuItemsCollection(),
+    vendorMenuDraftsCollection(),
   ]);
   const items = await menuItems.find({ vendorId: context.vendor._id }).toArray();
   const itemBySlug = new Map(items.map((item) => [item.taxonomySlug, vendorMenuItemToJson(item)]));
@@ -37,6 +40,9 @@ export default async function VendorMenuPage() {
   }));
 
   const taxonomyEmpty = sections.every((section) => section.options.length === 0);
+  const mappableOptions = mappableOptionsFrom(taxonomy);
+  const draft = await drafts.findOne({ vendorId: context.vendor._id });
+  const draftJson = draft ? vendorMenuDraftToJson(draft) : null;
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
@@ -61,6 +67,7 @@ export default async function VendorMenuPage() {
             Map your offerings onto the BrewPass menu. Until you publish anything here, you&apos;re
             treated as offering the full standard menu.
           </p>
+          <VendorMenuOnboarding options={mappableOptions} initialDraft={draftJson} />
           <VendorMenuManager sections={sections} />
         </>
       )}

@@ -11,6 +11,7 @@ export * from "@/lib/models/commission-config";
 export * from "@/lib/models/rating";
 export * from "@/lib/models/option-taxonomy";
 export * from "@/lib/models/vendor-menu-item";
+export * from "@/lib/models/vendor-menu-draft";
 export * from "@/lib/models/delivery";
 export * from "@/lib/models/corporate-account";
 export * from "@/lib/models/preference-signal";

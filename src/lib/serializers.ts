@@ -6,6 +6,7 @@ import type {
   Subscription,
   User,
   Vendor,
+  VendorMenuDraft,
   VendorMenuItem,
   VendorPayout,
 } from "@/lib/models";
@@ -140,6 +141,20 @@ export function vendorMenuItemToJson(item: VendorMenuItem) {
   };
 }
 
+export function vendorMenuDraftToJson(draft: VendorMenuDraft) {
+  return {
+    id: draft._id.toHexString(),
+    status: draft.status,
+    rows: draft.rows.map((row) => ({
+      rawText: row.rawText,
+      matchedTaxonomyRef: row.matchedTaxonomyRef,
+      proposedPriceSen: row.proposedPriceSen,
+      confidence: row.confidence,
+    })),
+    confirmedAt: draft.confirmedAt?.toISOString() ?? null,
+  };
+}
+
 /**
  * Serialize a monthly list for the planner UI. `vendorNames` maps vendor id
  * (hex) → business name so each day can show its assigned vendor.
@@ -176,3 +191,4 @@ export type LocationJson = ReturnType<typeof locationToJson>;
 export type PreferenceJson = ReturnType<typeof preferenceToJson>;
 export type VendorJson = ReturnType<typeof vendorToJson>;
 export type VendorMenuItemJson = ReturnType<typeof vendorMenuItemToJson>;
+export type VendorMenuDraftJson = ReturnType<typeof vendorMenuDraftToJson>;
