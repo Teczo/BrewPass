@@ -2,10 +2,11 @@
 
 > Your daily coffee, delivered on schedule. Subscribe once — we handle the rest.
 
-BrewPass is a **subscription coffee marketplace**. Subscribers tell us their "usual"
-coffee once; every working day a customized coffee is made by a local coffee
-business and delivered to them at their chosen place and time. The night before,
-they're reminded and can tweak or skip — otherwise it's handled automatically.
+BrewPass is a **subscription coffee marketplace with integrated courier delivery**.
+Subscribers tell us their "usual" coffee once; every working day a customized coffee
+is made by a local coffee business and delivered to them by a dispatched courier at
+their chosen place and time — tracked live inside the app. The night before, they're
+reminded and can tweak or skip — otherwise it's handled automatically.
 
 This guide explains what the app is, who uses it, how it works end to end, what
 everything costs, and every feature available to each party.
@@ -25,8 +26,14 @@ payments, payouts, and quality.
 
 The core promise: **choose once, drink daily.** A subscriber sets a preference (or
 plans a whole month), and the platform automatically generates, routes, charges,
-and arranges delivery of one coffee per scheduled day — reassigning to another
-vendor if their first choice is unavailable, so the daily coffee always shows up.
+dispatches a courier, and delivers one coffee per scheduled day — reassigning to
+another vendor if their first choice is unavailable, so the daily coffee always
+shows up.
+
+The product is **convenience, not low price**: the subscriber pays once (card on
+file), plans drinks once, and never browses, books, or pays for delivery
+separately. Delivery is dispatched by the platform and **its cost is baked into the
+plan price** — there is no separate delivery charge.
 
 All prices are in **Malaysian Ringgit (MYR)**. All times are **Asia/Kuala_Lumpur
 (KL, UTC+8)**.
@@ -94,6 +101,22 @@ of the coffee quota and are charged separately to the saved card at cutoff.
 > All money is stored internally in integer **sen** (1 MYR = 100 sen) to avoid
 > rounding errors.
 
+### 3.4 Delivery-inclusive pricing (v2.1)
+
+Delivery is **never billed to the subscriber separately** — its cost is absorbed
+into the plan price. The subscriber sees no delivery line item and never pays or
+books a courier.
+
+- The **courier fee** the platform pays (typically a few ringgit, by distance) is a
+  **platform cost**, recorded internally for margin accounting. It is invisible to
+  the subscriber and is **never deducted from the vendor's payout**.
+- Because every kilometre of a vendor's service radius is a platform cost,
+  **proximity-first routing protects unit economics** — nearer vendors are cheaper
+  to deliver from.
+- Vendors are paid a **negotiated marketplace coffee rate** (typically below their
+  public retail price) in exchange for guaranteed daily volume. This negotiated rate
+  — not the vendor's public menu price — is what feeds the vendor's payout.
+
 ---
 
 ## 4. The Coffee Taxonomy (how menus stay portable)
@@ -145,10 +168,14 @@ The platform runs three scheduled jobs each day (KL time):
 4. **6:00 AM — Cutoff.** The order locks (`confirmed`). The platform charges the
    subscriber's saved card for that coffee (or decrements quota on prepaid plans),
    charges any add-ons, and records the vendor's acceptance.
-5. **Daytime — Fulfillment.** The vendor sees the order on their board and moves
-   it: *preparing → out for delivery → delivered.* A rider is assigned at handoff.
-6. **On delivery — Payout unlocked.** Only after the vendor marks the order
-   **delivered** does the vendor's share become payable.
+5. **Daytime — Fulfillment.** The vendor sees the order on their board and starts
+   *preparing.* When they hit "Ready — hand off," the platform **dispatches a
+   courier** (Lalamove) to collect from the vendor and deliver to the subscriber.
+   The subscriber tracks the driver live in the app. (Vendors who self-deliver use
+   the legacy manual path with their own rider.)
+6. **On delivery — Payout unlocked.** Only after delivery is **confirmed** — by the
+   courier's webhook, or the vendor's "Mark delivered" on the manual path — does the
+   vendor's share become payable. A delivery-confirmation SMS goes to the subscriber.
 7. **11:00 PM — Payout sweep.** Held funds for delivered orders are transferred to
    the vendor's connected Stripe account, net of commission.
 8. **After delivery — Rating.** The subscriber can rate the delivery 1–5 stars,
@@ -165,6 +192,12 @@ scheduled ──(6 AM cutoff)──► confirmed ──► preparing ──► o
     ├──(user skips before cutoff)──► skipped                          (subscriber can rate)
     └──(no quota / inactive / charge fails)──► failed ──► (customer refunded)
 ```
+
+Each order has one **delivery record** that runs its own state machine during the
+`out_for_delivery` phase: `pending → assigned → picked_up → delivered`, or
+`failed`. The machine only advances forward and ignores out-of-order/duplicate
+courier events. A `delivered` delivery releases the payout; a `failed` one refunds
+the subscriber and pays the vendor nothing.
 
 ---
 
@@ -294,7 +327,71 @@ signature-verified and de-duplicated** so retried or out-of-order events are saf
 
 ---
 
-## 10. Subscriber Features (full list)
+## 10. Delivery & Live Tracking (v2.1)
+
+Delivery is a first-class, platform-dispatched step — not a manual stub.
+
+### Courier dispatch
+
+- When a vendor hits **"Ready — hand off,"** the platform requests a real-time quote
+  from the courier (vendor → subscriber route) and **dispatches a courier order**.
+  The primary courier is **Lalamove** (Malaysia); **Grab** is planned as a second
+  adapter behind the same courier abstraction.
+- **Self-delivery fallback:** a vendor can keep delivering with their own rider via
+  the legacy **manual** path. Each vendor's delivery provider resolves as:
+  `manual` (always self-deliver) · unset (use the platform's Lalamove if configured,
+  else manual) · `lalamove`/`grab` (use that provider if its adapter is configured,
+  else fall back to manual).
+- Courier dispatch is server-only and **idempotent** — an order is never
+  double-dispatched.
+
+### Delivery lifecycle
+
+The courier's events drive the delivery state machine, mapped from provider
+statuses:
+
+| Courier status | Delivery state | Meaning for the subscriber |
+|----------------|----------------|----------------------------|
+| pending / assigning | (info only) | Finding a driver |
+| driver assigned | `assigned` | A driver is on the way to the vendor |
+| picked up | `picked_up` | Driver has the coffee, heading to you |
+| completed | `delivered` | Delivered — **payout released**, SMS sent |
+| canceled / rejected / expired | `failed` | Delivery fell through — **you're refunded** |
+
+The machine only moves forward and ignores duplicate or out-of-order events. Once
+`delivered` or `failed`, it's terminal.
+
+### In-app live tracking (subscriber)
+
+While an order is out for delivery, the dashboard shows a **"Track your delivery"**
+panel with:
+
+- **Driver details** — name, vehicle plate, and a call button (when provided).
+- **Live map** — a map with the driver's live location (refreshed about every 15
+  seconds) and your drop-off point, auto-fitted so you can watch the driver approach.
+- **Status badge** — *Finding a driver → Driver assigned → Picked up, on the way →
+  Delivered* (or *Delivery problem*).
+- **Fallback link** — if live location goes stale, a link opens the courier's own
+  tracking page.
+
+Tracking is fully **in-app** — the subscriber never leaves BrewPass for the
+courier's app or website. Polling stops once the order is delivered or failed.
+
+### Webhooks, payout gating & failures
+
+- Courier status changes arrive at a **signature-verified webhook**
+  (`/api/webhooks/courier/[provider]`) and are processed **idempotently** (de-duped
+  per provider + courier order + status), so payout is never released twice.
+- **Payout stays delivery-gated:** the vendor is paid only when delivery is
+  confirmed `delivered` (by webhook on the courier path, or the "Mark delivered"
+  button on the manual path). On handoff, funds are merely held.
+- **On courier failure/cancellation:** the order is marked `failed`, the subscriber
+  is refunded, and the vendor earns nothing. An admin can re-dispatch or manually
+  resolve a stuck delivery.
+
+---
+
+## 11. Subscriber Features (full list)
 
 ### Onboarding (3 steps)
 1. **Profile** — name, phone, role.
@@ -308,6 +405,8 @@ signature-verified and de-duplicated** so retried or out-of-order events are saf
 - **Subscription card** — plan, status, quota remaining, manage link.
 - **Upcoming order card** — tomorrow's drink, location, time, add-ons, status, and a
   smart suggestion banner. Actions before cutoff: **Change, Skip, Unskip**.
+- **Live delivery tracking** — while an order is out for delivery, a "Track your
+  delivery" panel shows the driver, a live map, and status (see §10).
 - **Monthly planner** link — plan the whole month at once.
 - **Health insights** (opt-in) — rough caffeine & sugar estimates from the last 7
   days of orders (not medical advice).
@@ -329,12 +428,13 @@ signature-verified and de-duplicated** so retried or out-of-order events are saf
 
 ### Notifications
 - **Push (FCM)** and **email (Resend)** — the night-before reminder.
-- **SMS (Twilio)** — vendor status updates (preparing, out for delivery, etc.).
+- **SMS (Twilio)** — delivery status updates, including a delivery-confirmation
+  message ("your [drink] has been delivered — enjoy! ☕").
 - All notifications are best-effort; a notification failure never blocks an order.
 
 ---
 
-## 11. Corporate / Team Accounts
+## 12. Corporate / Team Accounts
 
 For companies buying coffee for a team under one bill.
 
@@ -355,7 +455,7 @@ For companies buying coffee for a team under one bill.
 
 ---
 
-## 12. Vendor Features (full list)
+## 13. Vendor Features (full list)
 
 ### Becoming a vendor (lifecycle)
 - **Apply** (`/vendor/apply`): business name, address (auto-geocoded), hourly
@@ -375,6 +475,15 @@ temporary closure), `offline` (vendor-controlled closure), `suspended`
   on or off, set prices. A vendor with **no published menu** is treated as offering
   the full canonical menu (preserves migrated behavior); once items are published,
   routing only offers what's marked available.
+- **AI-assisted menu onboarding (v2.1)** — instead of entering items one by one, a
+  vendor can **upload 1–5 menu screenshots/photos** (PNG/JPEG/WebP/GIF, ~5 MB each).
+  Claude reads each image and proposes a draft: for every item it returns the raw
+  text, the best-matching taxonomy option, a price (if visible), and a confidence
+  score. The vendor **reviews and edits** the draft (fix a mapping, set/clear a
+  price, remove a row, or save for later), then **confirms** to publish. Confirming
+  runs every row through the **same validation** as manual edits; unmapped rows are
+  skipped and reported. Uploaded images are processed transiently and **never
+  stored**; if the AI is unavailable, the vendor maps the menu manually.
 - **Capacity controls** —
   - **Sold out:** mark any of the next 7 days as sold out (routing skips them).
   - **Daily cap:** max orders per day (blank = unlimited).
@@ -384,9 +493,15 @@ temporary closure), `offline` (vendor-controlled closure), `suspended`
 - **Order board** — a Kanban view of today's queue:
   *To prepare (confirmed) → In progress (preparing) → Out for delivery → Delivered.*
   Each card shows the drink, size/milk/sugar/strength, add-ons, notes, customer, and
-  location. At handoff a **delivery record** is created; the vendor assigns a rider
-  and then **marks delivered** (releases payout) or **marks failed** (refunds the
-  customer). Tomorrow's locked orders are previewed but not yet actionable.
+  location. At **"Ready — hand off,"** a courier is dispatched (Lalamove): the card
+  then shows **read-only courier status** (driver name once assigned, plus a tracking
+  link) and delivery is confirmed by the courier webhook — no manual button. On the
+  **self-delivery (manual) path**, the vendor instead assigns a rider name and
+  **marks delivered** (releases payout) or **marks failed** (refunds the customer).
+  Tomorrow's locked orders are previewed but not yet actionable.
+- **Delivery provider** — a vendor can run on the platform courier (Lalamove) or
+  opt into **self-delivery (manual)**; left unset, they default to the platform
+  courier when it's configured, else manual.
 - **Earnings & payouts** — connect Stripe (Express onboarding), see **held**
   (awaiting payout) vs **paid out** totals, the last 20 payout statements (period,
   count, cadence, net, status), and toggle **payout cadence** (daily batch / per
@@ -396,7 +511,7 @@ temporary closure), `offline` (vendor-controlled closure), `suspended`
 
 ---
 
-## 13. Quality & Ratings
+## 14. Quality & Ratings
 
 Three signals feed each vendor's quality, all computed from raw, never-reset
 counters:
@@ -424,7 +539,7 @@ Suspended vendors receive no new orders until an admin clears the flag.
 
 ---
 
-## 14. Admin / Operator Features
+## 15. Admin / Operator Features
 
 The admin portal (`/admin`) lets the BrewPass team run the marketplace:
 
@@ -437,7 +552,8 @@ The admin portal (`/admin`) lets the BrewPass team run the marketplace:
   overrides.
 - **Order tools** — for today's orders: **force-skip**, **reassign vendor**,
   **refund quota**, and **refund money** (which also reverses a vendor transfer if
-  already paid). Each order shows its charge and payout state.
+  already paid). Each order shows its charge, payout, and delivery state, and admins
+  can resolve a stuck delivery (re-dispatch or manually mark delivered/failed).
 - **Vendor management** — approve/reject applications, change status
   (active/paused/suspended/offline), clear quality suspensions, set commission,
   manage vendor staff (add/remove portal access by email), and create vendors
@@ -450,12 +566,13 @@ The admin portal (`/admin`) lets the BrewPass team run the marketplace:
 
 ---
 
-## 15. Platform Guarantees (the rules behind the scenes)
+## 16. Platform Guarantees (the rules behind the scenes)
 
-- **Never double-charge, double-generate, double-pay, or double-refund** — every
-  cron, charge, transfer, and refund is idempotent, keyed per order + action.
-- **Routing, cutoff, charging, payouts, and refunds are server-only** — clients
-  request; the server decides.
+- **Never double-charge, double-generate, double-pay, double-refund, or
+  double-dispatch** — every cron, charge, transfer, refund, and courier dispatch is
+  idempotent, keyed per order + action.
+- **Routing, cutoff, charging, payouts, refunds, and courier dispatch are
+  server-only** — clients request; the server decides.
 - **Per-day charging into the platform balance** for card-on-file plans — never a
   full-month upfront charge with mid-month adjustments.
 - **Vendor payouts are always delivery-gated** — no delivery, no transfer,
@@ -470,16 +587,18 @@ The admin portal (`/admin`) lets the BrewPass team run the marketplace:
 
 ---
 
-## 16. Platform & Availability
+## 17. Platform & Availability
 
 - **Web app:** Next.js (App Router) on Vercel, with Vercel Cron running the daily
   jobs.
 - **Mobile:** the same web build wrapped with **Capacitor** (iOS/Android), adding
   native push notifications and geolocation.
 - **Data & services:** MongoDB Atlas (database), Auth0 (auth), Stripe + Stripe
-  Connect (payments/payouts), Firebase Cloud Messaging (push), Twilio (SMS), Resend
-  (email), Google Maps (geocoding & service-area distance), Vercel Blob (vendor
-  logos/menu images), Sentry (monitoring).
+  Connect (payments/payouts), **Lalamove courier API** (delivery dispatch & tracking;
+  **Grab** planned as a second adapter), Firebase Cloud Messaging (push), Twilio
+  (SMS), Resend (email), Google Maps (geocoding, service-area distance & in-app
+  tracking maps), **Anthropic Claude** (AI menu extraction & vendor recommendations),
+  Vercel Blob (vendor logos/menu images), Sentry (monitoring).
 
 ---
 
