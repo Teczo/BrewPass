@@ -46,6 +46,7 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 - **Email:** Resend.
 - **Storage:** Vercel Blob (vendor logos, menu images).
 - **Monitoring:** Sentry.
+- **AI:** Anthropic API (already used for vendor recommendation; also used for menu extraction in Phase C.5). Server-side only; key in `ANTHROPIC_API_KEY`.
 
 ### Conventions (carried from v1)
 - TypeScript strict. Zod-validate all external input.
@@ -62,6 +63,7 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 - **Vendor** — businessName, ownerUserId, status (`pending` | `active` | `paused` | `suspended` | `offline`), address, geocoded lat/lng, serviceAreaRadius (or polygon), operatingHours, capacity (daily cap + optional per-slot caps), stripeConnectAccountId, commissionRateOverride (nullable → falls back to platform default), **payoutCadence (`per_order` | `daily_batch`, default `daily_batch`)**, ratingScore, acceptanceRate, onTimeRate.
 - **OptionTaxonomy** (platform-level, seeded) — canonical drinks, sizes, milks, add-ons, strength levels. The single source of truth subscriber preferences point to.
 - **VendorMenuItem** — vendorId, taxonomyRef, price, availability toggle, optional image. Maps a vendor's offering onto the taxonomy.
+- **VendorMenuDraft** (Phase C.5) — vendorId, status (`proposed` | `confirmed`), array of proposal rows produced by AI menu extraction. Each row: `{ rawText, matchedTaxonomyRef | null, proposedPriceSen, confidence }`. This is a **staging area only** — it never feeds routing, charging, or order generation. Rows become real `VendorMenuItem`s only when the vendor confirms and each row is replayed through the existing menu-write validation. Source screenshots are **not** persisted (processed transiently in-request).
 - **VendorPayout** — vendorId, period, gross, commission, net, stripeTransferId, status, statement data. Always released **post-delivery**; `payoutCadence` only controls how often held funds are swept to the vendor.
 - **CommissionConfig** — platform default rate; per-vendor overrides live on Vendor.
 - **Rating** — orderId, userId, vendorId, score, comment → aggregates into Vendor.ratingScore.
@@ -97,6 +99,23 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 - Vendor menu management: map offerings to taxonomy, set prices, availability toggles, optional images.
 - Refactor subscriber **Preference** to reference taxonomy (migrate v1 hardcoded prefs).
 - **Deliverable:** vendors publish standardized menus; subscriber prefs are taxonomy-based and portable.
+
+### Phase C.5 — AI-Assisted Menu Onboarding (extends Phase C)
+**Goal:** cut vendor onboarding from a manual mapping chore to a quick review. Most vendors already have a menu on Grab/Uber/DoorDash; let them upload a screenshot, have the AI extract items and map each onto the taxonomy, then review/edit/confirm.
+
+**The flow (four steps, strictly in this order):**
+1. **Upload + extract (no writes).** Vendor uploads one or more menu screenshots. A server-side, vendor-scoped extraction route sends the image to the Anthropic API and returns proposal rows. The image is **processed transiently and never stored** — only the extracted rows are kept.
+2. **Persist as draft.** Rows are saved to a `VendorMenuDraft` (`status: proposed`) so review is resumable — the vendor can leave and come back. Persisting the draft is **not** publishing; nothing is live or routable yet.
+3. **Review + edit.** Vendor reviews proposals in the existing menu-management UI. Rows the AI couldn't confidently map (`matchedTaxonomyRef: null`) are flagged "needs your input." Vendor fixes drinks, prices, mappings.
+4. **Confirm → publish.** On confirm, **each row is replayed through the exact same validation as a manual menu edit** (the existing `PUT /api/vendor/menu` path: active-slug check, size/strength reject, price-when-available, `priceSen` bounds). Only rows that pass become real `VendorMenuItem`s. The draft is marked `confirmed`. A batch write endpoint is acceptable **only if** it calls that same validation — never fork it.
+
+**Implementation notes:**
+- New extraction lib lives alongside `vendor-recommender.ts`, reusing `new Anthropic()` + `messages.create` with an image block and structured (`json_schema`) output. Proposal row shape: `{ rawText, matchedTaxonomyRef | null, proposedPriceSen, confidence }`.
+- The `confidence` field is **advisory display only** — surfaced to the vendor so they know what to scrutinize. It is **never** used to auto-accept a row (see Rule 16).
+- No image storage. Do **not** add `@vercel/blob` for this feature; process the screenshot within the extraction request and discard it.
+- This feature touches **menu data only.** It must not read from or write to routing, cutoff, charging, payout, or order-generation paths.
+
+- **Deliverable:** a vendor uploads a menu screenshot, the AI proposes a taxonomy-mapped menu, and after the vendor reviews and confirms, a validated menu is published — with manual mapping always available as the fallback.
 
 ### Phase D — Vendor Selection + Routing Engine (critical)
 - **Subscriber selection UI (hybrid):**
@@ -184,15 +203,17 @@ The user's pain point is choosing/approving daily, not being charged daily. Per-
 4. **Vendor payout is always delivery-gated.** No delivery → no transfer. `payoutCadence` (per_order vs daily_batch) only controls sweep frequency, never whether payout happens. Use separate charges and transfers, not card auth holds.
 5. **Subscriber preferences and monthly lists reference the taxonomy, never a single vendor's menu.** Keeps auto-orders portable across vendors and reassignment.
 6. **Snapshot vendor, drink spec, and price at order confirmation / list confirmation.** Don't read live menus/preferences after lock.
-7. **Vendor selection and the monthly list take effect only after the user confirms.** Both AI and manual are editable pre-confirm; never silently change a confirmed selection or list.
+7. **Vendor selection, the monthly list, AND AI-extracted menus take effect only after the user confirms.** Both AI and manual are editable pre-confirm; never silently change a confirmed selection, list, or menu. AI menu extraction (Phase C.5) writes to a `VendorMenuDraft` only — nothing becomes a live `VendorMenuItem` before the vendor confirms.
 8. **My own operation is just Vendor #1.** No special-case branches.
 9. **Stripe Connect:** never store vendor bank/KYC data. Reverse transfers correctly on refund/dispute.
 10. **Phase A migration must be clean, tested, and reversible.** This is where v1 and v2 data diverge.
-11. **Confirm with me before hardcoding** commission rates, capacity defaults, routing weightings, cutoff times, or failed-card policy — business decisions.
-12. Don't swap or add infrastructure without asking.
+11. **Confirm with me before hardcoding** commission rates, capacity defaults, routing weightings, cutoff times, failed-card policy, or AI confidence thresholds / default menu pricing — business decisions.
+12. Don't swap or add infrastructure without asking. (Phase C.5 specifically: do **not** add `@vercel/blob` or any image-storage dependency — menu screenshots are processed transiently in-request and discarded.)
+13. **AI-extracted menu data must reach `vendorMenuItems` only through the existing menu-write validation.** The AI proposes; the vendor confirms; each confirmed row is replayed through the same Zod validation a manual edit uses. Never fork or bypass that validation, even for a batch endpoint.
+14. **Phase C.5 touches menu data only.** It must not read from or write to routing, cutoff, charging, payout, or order-generation. Menu screenshots are never persisted.
 
 ---
 
 ## Build Order Reminder
-A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G → H.
-D (routing) and E (charging/payouts) carry almost all the risk. If anything is shaky, it's there. D.5 (monthly list) is what makes "choose once a month" real and feeds scheduled orders into E.
+A → B → C → **C.5** → **D (carefully)** → D.5 → **E (carefully)** → F → G → H.
+D (routing) and E (charging/payouts) carry almost all the risk. If anything is shaky, it's there. D.5 (monthly list) is what makes "choose once a month" real and feeds scheduled orders into E. C.5 (AI menu onboarding) is a low-risk, menu-only convenience that extends C — it is isolated from all money/routing paths and gated behind vendor confirmation.
