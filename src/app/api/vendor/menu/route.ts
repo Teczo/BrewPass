@@ -1,8 +1,7 @@
-import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
-import { optionTaxonomyCollection, vendorMenuItemsCollection } from "@/lib/collections";
+import { vendorMenuItemsCollection } from "@/lib/collections";
+import { writeVendorMenuItem } from "@/lib/menu-write";
 import { vendorMenuItemToJson } from "@/lib/serializers";
 import { loadActiveTaxonomy } from "@/lib/taxonomy";
 import { getCurrentVendorContext } from "@/lib/vendors";
@@ -40,73 +39,20 @@ export async function GET() {
   return NextResponse.json({ vendor: { id: context.vendor._id.toHexString() }, sections });
 }
 
-const upsertSchema = z.object({
-  slug: z.string().min(1),
-  available: z.boolean(),
-  /** Sen. Required for drinks/add-ons; ignored for milks. */
-  priceSen: z.number().int().min(0).max(100_000).optional(),
-  imageUrl: z.string().url().max(2000).optional(),
-});
-
 /** Publish/update a single menu item, mapped onto a taxonomy entry. */
 export async function PUT(request: Request) {
   const context = await getCurrentVendorContext();
   if (!context) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const parsed = upsertSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid input", issues: parsed.error.issues },
-      { status: 400 },
-    );
-  }
-  const input = parsed.data;
-
-  // The slug must be an active taxonomy entry; vendors map onto the
-  // platform taxonomy, they don't invent options.
-  const taxonomy = await optionTaxonomyCollection();
-  const entry = await taxonomy.findOne({ slug: input.slug, active: true });
-  if (!entry) {
-    return NextResponse.json({ error: "Unknown or inactive menu option." }, { status: 422 });
-  }
-  if (entry.category === "size" || entry.category === "strength") {
-    return NextResponse.json(
-      { error: "Sizes and strength are universal and aren't menu-managed." },
-      { status: 422 },
-    );
-  }
-  // Drinks and add-ons need a price when offered; milks are availability-only.
-  const priced = entry.category === "drink" || entry.category === "addon";
-  if (priced && input.available && input.priceSen === undefined) {
-    return NextResponse.json(
-      { error: "Set a price for this item before making it available." },
-      { status: 422 },
-    );
-  }
-
-  const now = new Date();
-  const set: Record<string, unknown> = {
-    category: entry.category,
-    available: input.available,
-    updatedAt: now,
-  };
-  const unset: Record<string, ""> = {};
-  if (priced && input.priceSen !== undefined) set.priceSen = input.priceSen;
-  else if (!priced) unset.priceSen = "";
-  if (input.imageUrl !== undefined) set.imageUrl = input.imageUrl;
-  else unset.imageUrl = "";
-
-  const menuItems = await vendorMenuItemsCollection();
-  const updated = await menuItems.findOneAndUpdate(
-    { vendorId: context.vendor._id, taxonomySlug: entry.slug },
-    {
-      $set: set,
-      ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
-      $setOnInsert: { _id: new ObjectId(), vendorId: context.vendor._id, createdAt: now },
-    },
-    { upsert: true, returnDocument: "after" },
+  const result = await writeVendorMenuItem(
+    context.vendor._id,
+    await request.json().catch(() => null),
   );
-  if (!updated) return NextResponse.json({ error: "Failed to save menu item" }, { status: 500 });
-
-  return NextResponse.json({ item: vendorMenuItemToJson(updated) });
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.error, ...(result.issues ? { issues: result.issues } : {}) },
+      { status: result.status },
+    );
+  }
+  return NextResponse.json({ item: result.item });
 }
