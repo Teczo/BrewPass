@@ -8,6 +8,10 @@ Because the shell just loads the web app, the v2 marketplace surfaces ride
 along for free: subscribers, the **vendor portal** (`/vendor/*`), and the
 admin portal (`/admin`) all run in the same shell with no extra native work.
 A vendor signing in on mobile lands in their portal exactly as on the web.
+The v2.1 **live delivery tracking** map works the same way — it renders with
+the browser Maps key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, see
+`docs/deployment.md` §6); make sure that key's HTTP-referrer restriction
+allows your deployment domain.
 
 ## What's already wired in this repo
 
