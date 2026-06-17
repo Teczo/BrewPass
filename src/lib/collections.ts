@@ -18,7 +18,9 @@ import type {
   VendorMenuDraft,
   VendorMenuItem,
   VendorPayout,
+  WebhookDelivery,
   WebhookEvent,
+  WebhookSubscription,
 } from "@/lib/models";
 
 /** Typed accessors for every collection. Always go through these. */
@@ -91,6 +93,14 @@ export async function webhookEventsCollection(): Promise<Collection<WebhookEvent
   return (await getDb()).collection<WebhookEvent>("webhookEvents");
 }
 
+export async function webhookSubscriptionsCollection(): Promise<Collection<WebhookSubscription>> {
+  return (await getDb()).collection<WebhookSubscription>("webhookSubscriptions");
+}
+
+export async function webhookDeliveriesCollection(): Promise<Collection<WebhookDelivery>> {
+  return (await getDb()).collection<WebhookDelivery>("webhookDeliveries");
+}
+
 /**
  * Indexes the app relies on. Idempotent — safe to call from a setup script
  * or admin route after provisioning a new database.
@@ -112,6 +122,8 @@ export async function ensureIndexes(): Promise<void> {
     deliveries,
     signals,
     webhooks,
+    webhookSubscriptions,
+    webhookDeliveries,
   ] = await Promise.all([
     usersCollection(),
     locationsCollection(),
@@ -128,6 +140,8 @@ export async function ensureIndexes(): Promise<void> {
     deliveriesCollection(),
     preferenceSignalsCollection(),
     webhookEventsCollection(),
+    webhookSubscriptionsCollection(),
+    webhookDeliveriesCollection(),
   ]);
 
   await Promise.all([
@@ -184,5 +198,74 @@ export async function ensureIndexes(): Promise<void> {
     signals.createIndex({ orderId: 1 }, { unique: true }),
     // Webhook idempotency: each delivered event is claimed exactly once.
     webhooks.createIndex({ source: 1, eventId: 1 }, { unique: true }),
+    // Outbound webhooks (Phase I.5): the dispatcher lists active subscriptions.
+    webhookSubscriptions.createIndex({ active: 1 }),
+    // Idempotent outbound delivery: one row per (subscription, logical event).
+    webhookDeliveries.createIndex({ subscriptionId: 1, eventId: 1 }, { unique: true }),
+    // The retry sweep claims due, non-terminal deliveries.
+    webhookDeliveries.createIndex({ status: 1, nextAttemptAt: 1 }),
+    // Phase I.2 — stable external identity. Unique per collection; partial so
+    // any rows not yet backfilled (missing externalId) don't collide on null.
+    // The API boundary looks entities up by externalId, never raw _id.
+    users.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    locations.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    preferences.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    subscriptions.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    orders.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    vendors.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    monthlyLists.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    vendorPayouts.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    ratings.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    taxonomy.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    menuItems.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    menuDrafts.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    deliveries.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    signals.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    webhookSubscriptions.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
   ]);
 }

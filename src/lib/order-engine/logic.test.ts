@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { describe, expect, it } from "vitest";
 
+import { newDocumentMeta } from "@/lib/models";
 import type { Location, Order, Preference, Subscription, Vendor } from "@/lib/models";
 import {
   buildOrder,
@@ -17,6 +18,7 @@ const SATURDAY = "2026-06-13";
 function makeSubscription(overrides: Partial<Subscription> = {}): Subscription {
   return {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     userId: new ObjectId(),
     plan: "weekday",
     stripeCustomerId: "cus_test",
@@ -35,6 +37,7 @@ function makeSubscription(overrides: Partial<Subscription> = {}): Subscription {
 function makePreference(userId: ObjectId, overrides: Partial<Preference> = {}): Preference {
   return {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     userId,
     defaultDrink: {
       drink: "Flat White",
@@ -54,6 +57,7 @@ function makePreference(userId: ObjectId, overrides: Partial<Preference> = {}): 
 function makeLocation(userId: ObjectId): Location {
   return {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     userId,
     label: "Office",
     address: "Level 12, Menara TECZO, KL",
@@ -67,6 +71,7 @@ function makeLocation(userId: ObjectId): Location {
 function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
   return {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     businessName: "Kopi Corner",
     status: "active",
     address: "Jalan Sultan Ismail",

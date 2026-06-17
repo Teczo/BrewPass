@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { ordersCollection, ratingsCollection } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import { recordRating } from "@/lib/quality-service";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
@@ -53,6 +54,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     await ratings.insertOne({
       _id: new ObjectId(),
+      ...newDocumentMeta(),
       orderId: order._id,
       userId: user._id,
       vendorId: order.vendorId,

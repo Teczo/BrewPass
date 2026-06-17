@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
 import { commissionConfigCollection } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import { getPlatformCommissionBps } from "@/lib/payments/commission";
 import { PLATFORM_DEFAULT_COMMISSION_BPS } from "@/lib/payments/money";
 
@@ -44,7 +45,12 @@ export async function PUT(request: Request) {
     { key: "platform" },
     {
       $set: { defaultRateBps: parsed.data.defaultRateBps, updatedAt: now },
-      $setOnInsert: { _id: new ObjectId(), key: "platform" as const, createdAt: now },
+      $setOnInsert: {
+        _id: new ObjectId(),
+        ...newDocumentMeta(),
+        key: "platform" as const,
+        createdAt: now,
+      },
     },
     { upsert: true },
   );

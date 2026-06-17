@@ -9,6 +9,7 @@ import type {
   VendorMenuDraft,
   VendorMenuItem,
   VendorPayout,
+  WebhookSubscription,
 } from "@/lib/models";
 
 /** JSON-safe shapes sent to the client (ObjectIds and Dates stringified). */
@@ -16,6 +17,7 @@ import type {
 export function userToJson(user: User) {
   return {
     id: user._id.toHexString(),
+    externalId: user.externalId,
     name: user.name,
     email: user.email,
     phone: user.phone ?? null,
@@ -27,6 +29,7 @@ export function userToJson(user: User) {
 export function locationToJson(location: Location) {
   return {
     id: location._id.toHexString(),
+    externalId: location.externalId,
     label: location.label,
     address: location.address,
     geo: location.geo,
@@ -37,6 +40,7 @@ export function locationToJson(location: Location) {
 export function preferenceToJson(preference: Preference) {
   return {
     id: preference._id.toHexString(),
+    externalId: preference.externalId,
     defaultDrink: preference.defaultDrink,
     schedule: preference.schedule,
     defaultLocationId: preference.defaultLocationId.toHexString(),
@@ -46,6 +50,7 @@ export function preferenceToJson(preference: Preference) {
 export function subscriptionToJson(subscription: Subscription) {
   return {
     id: subscription._id.toHexString(),
+    externalId: subscription.externalId,
     plan: subscription.plan,
     status: subscription.status,
     quota: subscription.quota,
@@ -57,6 +62,7 @@ export function subscriptionToJson(subscription: Subscription) {
 export function orderToJson(order: Order) {
   return {
     id: order._id.toHexString(),
+    externalId: order.externalId,
     date: order.date,
     drink: order.drink,
     location: {
@@ -85,6 +91,7 @@ export function orderToJson(order: Order) {
 export function vendorToJson(vendor: Vendor) {
   return {
     id: vendor._id.toHexString(),
+    externalId: vendor.externalId,
     businessName: vendor.businessName,
     status: vendor.status,
     address: vendor.address,
@@ -119,6 +126,7 @@ export function vendorToJson(vendor: Vendor) {
 export function vendorPayoutToJson(payout: VendorPayout) {
   return {
     id: payout._id.toHexString(),
+    externalId: payout.externalId,
     period: payout.period,
     cadence: payout.cadence,
     orderCount: payout.orderIds.length,
@@ -133,6 +141,7 @@ export function vendorPayoutToJson(payout: VendorPayout) {
 export function vendorMenuItemToJson(item: VendorMenuItem) {
   return {
     id: item._id.toHexString(),
+    externalId: item.externalId,
     category: item.category,
     taxonomySlug: item.taxonomySlug,
     available: item.available,
@@ -144,6 +153,7 @@ export function vendorMenuItemToJson(item: VendorMenuItem) {
 export function vendorMenuDraftToJson(draft: VendorMenuDraft) {
   return {
     id: draft._id.toHexString(),
+    externalId: draft.externalId,
     status: draft.status,
     rows: draft.rows.map((row) => ({
       rawText: row.rawText,
@@ -162,6 +172,7 @@ export function vendorMenuDraftToJson(draft: VendorMenuDraft) {
 export function monthlyListToJson(list: MonthlyList, vendorNames: Map<string, string>) {
   return {
     id: list._id.toHexString(),
+    externalId: list.externalId,
     period: list.period,
     status: list.status,
     generationMethod: list.generationMethod,
@@ -180,6 +191,25 @@ export function monthlyListToJson(list: MonthlyList, vendorNames: Map<string, st
         skipped: entry.skipped,
       };
     }),
+  };
+}
+
+/**
+ * Admin view of an outbound-webhook subscription (Phase I.5). The signing
+ * secret is never returned in full after creation — only a short preview so
+ * the operator can recognise it. The full secret is shown exactly once, by
+ * the create route.
+ */
+export function webhookSubscriptionToJson(sub: WebhookSubscription) {
+  return {
+    id: sub._id.toHexString(),
+    externalId: sub.externalId,
+    url: sub.url,
+    eventTypes: sub.eventTypes,
+    active: sub.active,
+    description: sub.description ?? null,
+    secretPreview: `${sub.secret.slice(0, 11)}…`,
+    createdAt: sub.createdAt.toISOString(),
   };
 }
 

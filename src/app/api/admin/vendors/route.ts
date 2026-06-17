@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getCurrentAdmin } from "@/lib/admin";
 import { vendorsCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
+import { newDocumentMeta } from "@/lib/models";
 import type { Vendor } from "@/lib/models";
 
 export const runtime = "nodejs";
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
   // self-serve path is the application flow at /vendor/apply.
   const vendor: Vendor = {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     businessName: parsed.data.businessName,
     status: "active",
     address: geocoded.formattedAddress,

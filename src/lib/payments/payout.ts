@@ -1,9 +1,11 @@
 import { ObjectId } from "mongodb";
 
 import { ordersCollection, vendorPayoutsCollection, vendorsCollection } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import type { Order, Vendor } from "@/lib/models";
 import { buildPayoutBatch, type PayoutLine } from "@/lib/payments/money";
 import { getStripe } from "@/lib/stripe";
+import { emitPayoutReleased } from "@/lib/webhooks/emit";
 
 /**
  * Delivery-gated vendor payouts (Phase E, critical rule #4). The subscriber
@@ -244,7 +246,12 @@ async function transferBatch(args: {
         stripeConnectAccountId: accountId,
         updatedAt: now,
       },
-      $setOnInsert: { _id: new ObjectId(), status: "pending" as const, createdAt: now },
+      $setOnInsert: {
+        _id: new ObjectId(),
+        ...newDocumentMeta(),
+        status: "pending" as const,
+        createdAt: now,
+      },
     },
     { upsert: true, returnDocument: "after" },
   );
@@ -293,5 +300,10 @@ async function transferBatch(args: {
       },
     },
   );
+
+  // Phase I.5: best-effort outbound event for the released (delivery-gated)
+  // payout. Never blocks or alters the money move (critical rule #13).
+  await emitPayoutReleased({ ...payout!, status: "paid", stripeTransferId: transferId }, now);
+
   return { ok: true, netSen: batch.netSen };
 }

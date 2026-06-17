@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
 import { locationsCollection, preferencesCollection, usersCollection } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import { preferenceToJson } from "@/lib/serializers";
 import { findUncoveredDrinkField, loadDrinkValueSets } from "@/lib/taxonomy";
 import { getOnboardingStatus, getOrCreateCurrentUser } from "@/lib/users";
@@ -60,7 +61,7 @@ export async function PUT(request: Request) {
         defaultLocationId,
         updatedAt: now,
       },
-      $setOnInsert: { _id: new ObjectId(), userId: user._id, createdAt: now },
+      $setOnInsert: { _id: new ObjectId(), ...newDocumentMeta(), userId: user._id, createdAt: now },
     },
     { upsert: true, returnDocument: "after" },
   );

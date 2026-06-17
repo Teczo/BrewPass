@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { describe, expect, it } from "vitest";
 
+import { newDocumentMeta } from "@/lib/models";
 import type { Vendor } from "@/lib/models";
 import type { CoverageItem } from "@/lib/menu";
 import {
@@ -23,6 +24,7 @@ const POINT = { lat: 3.139, lng: 101.6869 };
 function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
   return {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     businessName: "Kopi Corner",
     status: "active",
     address: "Jalan Sultan Ismail",

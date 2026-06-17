@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { locationsCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
+import { newDocumentMeta } from "@/lib/models";
 import type { Location } from "@/lib/models";
 import { locationToJson } from "@/lib/serializers";
 import { getOrCreateCurrentUser } from "@/lib/users";
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
   const now = new Date();
   const doc: Location = {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     userId: user._id,
     label: parsed.data.label,
     address: geocoded.formattedAddress,

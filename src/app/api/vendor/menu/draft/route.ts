@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { vendorMenuDraftsCollection } from "@/lib/collections";
-import { menuDraftRowSchema } from "@/lib/models";
+import { menuDraftRowSchema, newDocumentMeta } from "@/lib/models";
 import { vendorMenuDraftToJson } from "@/lib/serializers";
 import { getCurrentVendorContext } from "@/lib/vendors";
 
@@ -46,7 +46,12 @@ export async function PUT(request: Request) {
     {
       $set: { status: "proposed", rows: parsed.data.rows, updatedAt: now },
       $unset: { confirmedAt: "" },
-      $setOnInsert: { _id: new ObjectId(), vendorId: context.vendor._id, createdAt: now },
+      $setOnInsert: {
+        _id: new ObjectId(),
+        ...newDocumentMeta(),
+        vendorId: context.vendor._id,
+        createdAt: now,
+      },
     },
     { upsert: true, returnDocument: "after" },
   );

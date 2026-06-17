@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 
 import { getSession } from "@/lib/auth0";
 import { locationsCollection, preferencesCollection, usersCollection } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import type { User } from "@/lib/models";
 
 /**
@@ -22,6 +23,7 @@ export async function getOrCreateCurrentUser(): Promise<User | null> {
     {
       $setOnInsert: {
         _id: new ObjectId(),
+        ...newDocumentMeta(),
         authSub: sub,
         name: name ?? "",
         email: email ?? "",
