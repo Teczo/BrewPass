@@ -6,6 +6,8 @@ import { loadRoutingCandidates, selectVendor } from "@/lib/order-engine/routing-
 import { recordDecline } from "@/lib/quality-service";
 import { isoWeekdayOf, localDateOf, localTimeOf } from "@/lib/time";
 import { getCurrentVendorContext } from "@/lib/vendors";
+import { vendorExternalIdsByHex } from "@/lib/v1/data";
+import { emitOrderEvent } from "@/lib/webhooks/emit";
 
 export const runtime = "nodejs";
 
@@ -100,5 +102,17 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   await recordDecline(vendorId, now); // Phase G acceptance metric
+
+  // Phase I.5: best-effort outbound event for the new assignment. The new
+  // vendor is part of the idempotency key so each reassignment is distinct.
+  const newVendorExternalId = await vendorExternalIdsByHex([result.vendorId]);
+  const ext = newVendorExternalId.get(result.vendorId.toHexString()) ?? null;
+  await emitOrderEvent(
+    "vendor.assigned",
+    { ...order, vendorId: result.vendorId, assignmentMethod: "reassigned" },
+    now,
+    { vendorExternalIdHint: ext, suffix: ext ?? result.vendorId.toHexString() },
+  );
+
   return NextResponse.json({ ok: true, reassigned: true });
 }

@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { ordersCollection } from "@/lib/collections";
 import { refundOrderCoffee } from "@/lib/payments/charge";
 import { reverseOrderTransfer } from "@/lib/payments/payout";
+import { emitOrderEvent } from "@/lib/webhooks/emit";
 
 /**
  * Refund / dispute handling (Phase E, critical rule #4 & #9).
@@ -33,6 +34,7 @@ export async function refundFailedDelivery(
     { _id: orderId },
     { $set: { chargeStatus: "refunded" as const, refundedAt: now, updatedAt: now } },
   );
+  await emitOrderEvent("refund.issued", { ...order, chargeStatus: "refunded" }, now);
 }
 
 /**
@@ -57,6 +59,7 @@ export async function handleChargeDispute(
     { _id: order._id },
     { $set: { chargeStatus: "refunded" as const, refundedAt: now, updatedAt: now } },
   );
+  await emitOrderEvent("refund.issued", { ...order, chargeStatus: "refunded" }, now);
 }
 
 export type AdminRefundResult =
@@ -95,5 +98,6 @@ export async function refundChargedOrder(
     await reverseOrderTransfer(order._id, now);
     reversedTransfer = true;
   }
+  await emitOrderEvent("refund.issued", { ...order, chargeStatus: "refunded" }, now);
   return { ok: true, reversedTransfer };
 }

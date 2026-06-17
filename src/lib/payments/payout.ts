@@ -5,6 +5,7 @@ import { newDocumentMeta } from "@/lib/models";
 import type { Order, Vendor } from "@/lib/models";
 import { buildPayoutBatch, type PayoutLine } from "@/lib/payments/money";
 import { getStripe } from "@/lib/stripe";
+import { emitPayoutReleased } from "@/lib/webhooks/emit";
 
 /**
  * Delivery-gated vendor payouts (Phase E, critical rule #4). The subscriber
@@ -299,5 +300,10 @@ async function transferBatch(args: {
       },
     },
   );
+
+  // Phase I.5: best-effort outbound event for the released (delivery-gated)
+  // payout. Never blocks or alters the money move (critical rule #13).
+  await emitPayoutReleased({ ...payout!, status: "paid", stripeTransferId: transferId }, now);
+
   return { ok: true, netSen: batch.netSen };
 }

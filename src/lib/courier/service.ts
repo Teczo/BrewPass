@@ -17,6 +17,7 @@ import { handleOrderDelivered } from "@/lib/payments/payout";
 import { refundFailedDelivery } from "@/lib/payments/refund";
 import { isOnTime } from "@/lib/quality";
 import { recordDelivery } from "@/lib/quality-service";
+import { emitOrderEvent } from "@/lib/webhooks/emit";
 
 /**
  * Courier orchestration (v2.1) — the database-touching seam between the
@@ -325,23 +326,25 @@ async function applyTransition(
         console.error(`On-time metric for order ${orderId.toHexString()} failed:`, error);
       }
       await notifyDelivered(order);
+      // Phase I.5: best-effort outbound event.
+      await emitOrderEvent("order.delivered", { ...order, status: "delivered" }, now);
     }
     return;
   }
 
   if (target === "failed") {
+    const failureReason = `courier_failed: ${rawStatus ?? "unknown"}`.slice(0, 300);
+    const order = await orders.findOne({ _id: orderId });
     await orders.updateOne(
       { _id: orderId, status: "out_for_delivery" },
-      {
-        $set: {
-          status: "failed",
-          failureReason: `courier_failed: ${rawStatus ?? "unknown"}`.slice(0, 300),
-          updatedAt: now,
-        },
-      },
+      { $set: { status: "failed", failureReason, updatedAt: now } },
     );
     // Delivery failed → refund the day; no transfer was ever released. Idempotent.
+    // (refundFailedDelivery emits refund.issued.)
     await refundFailedDelivery(orderId, now);
+    // Phase I.5: best-effort outbound event for the failed delivery.
+    if (order)
+      await emitOrderEvent("order.failed", { ...order, status: "failed", failureReason }, now);
   }
   // picked_up: delivery-only; the order stays out_for_delivery.
 }

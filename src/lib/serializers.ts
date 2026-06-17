@@ -9,6 +9,7 @@ import type {
   VendorMenuDraft,
   VendorMenuItem,
   VendorPayout,
+  WebhookSubscription,
 } from "@/lib/models";
 
 /** JSON-safe shapes sent to the client (ObjectIds and Dates stringified). */
@@ -190,6 +191,25 @@ export function monthlyListToJson(list: MonthlyList, vendorNames: Map<string, st
         skipped: entry.skipped,
       };
     }),
+  };
+}
+
+/**
+ * Admin view of an outbound-webhook subscription (Phase I.5). The signing
+ * secret is never returned in full after creation — only a short preview so
+ * the operator can recognise it. The full secret is shown exactly once, by
+ * the create route.
+ */
+export function webhookSubscriptionToJson(sub: WebhookSubscription) {
+  return {
+    id: sub._id.toHexString(),
+    externalId: sub.externalId,
+    url: sub.url,
+    eventTypes: sub.eventTypes,
+    active: sub.active,
+    description: sub.description ?? null,
+    secretPreview: `${sub.secret.slice(0, 11)}…`,
+    createdAt: sub.createdAt.toISOString(),
   };
 }
 

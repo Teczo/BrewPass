@@ -16,3 +16,4 @@ export * from "@/lib/models/delivery";
 export * from "@/lib/models/corporate-account";
 export * from "@/lib/models/preference-signal";
 export * from "@/lib/models/webhook-event";
+export * from "@/lib/models/webhook-subscription";

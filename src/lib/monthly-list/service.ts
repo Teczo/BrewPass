@@ -14,6 +14,7 @@ import { ordersFromList, planMonthlyEntries } from "@/lib/monthly-list/planner";
 import { loadRoutingCandidates } from "@/lib/order-engine/routing-data";
 import { slugify } from "@/lib/taxonomy";
 import { localDateOf, localTimeOf, tomorrowLocalDate } from "@/lib/time";
+import { emitOrderEvent } from "@/lib/webhooks/emit";
 
 /** The KL calendar month (YYYY-MM) of a local date. */
 export function periodOf(localDate: string): string {
@@ -277,6 +278,8 @@ export async function confirmMonthlyList(
     try {
       await orders.insertOne(order);
       created += 1;
+      // Phase I.5: best-effort outbound event (never blocks confirmation).
+      await emitOrderEvent("order.scheduled", order, now);
     } catch (error) {
       if (isDuplicateKeyError(error)) duplicates += 1;
       else throw error;
