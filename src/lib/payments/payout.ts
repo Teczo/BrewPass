@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 
 import { ordersCollection, vendorPayoutsCollection, vendorsCollection } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import type { Order, Vendor } from "@/lib/models";
 import { buildPayoutBatch, type PayoutLine } from "@/lib/payments/money";
 import { getStripe } from "@/lib/stripe";
@@ -244,7 +245,12 @@ async function transferBatch(args: {
         stripeConnectAccountId: accountId,
         updatedAt: now,
       },
-      $setOnInsert: { _id: new ObjectId(), status: "pending" as const, createdAt: now },
+      $setOnInsert: {
+        _id: new ObjectId(),
+        ...newDocumentMeta(),
+        status: "pending" as const,
+        createdAt: now,
+      },
     },
     { upsert: true, returnDocument: "after" },
   );

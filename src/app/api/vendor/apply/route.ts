@@ -5,7 +5,7 @@ import { z } from "zod";
 import { vendorsCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
 import type { Vendor } from "@/lib/models";
-import { operatingHoursSchema } from "@/lib/models";
+import { newDocumentMeta, operatingHoursSchema } from "@/lib/models";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { findVendorForUser } from "@/lib/vendors";
 
@@ -84,6 +84,7 @@ export async function POST(request: Request) {
 
   const vendor: Vendor = {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     ...application,
     ownerUserId: user._id,
     status: "pending",

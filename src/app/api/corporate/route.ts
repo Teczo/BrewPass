@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { corporateAccountsCollection, usersCollection } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import type { CorporateAccount } from "@/lib/models";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
   const now = new Date();
   const account: CorporateAccount = {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     company: parsed.data.company,
     billingOwnerUserId: user._id,
     memberUserIds: [],

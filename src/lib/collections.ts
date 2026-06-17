@@ -184,5 +184,64 @@ export async function ensureIndexes(): Promise<void> {
     signals.createIndex({ orderId: 1 }, { unique: true }),
     // Webhook idempotency: each delivered event is claimed exactly once.
     webhooks.createIndex({ source: 1, eventId: 1 }, { unique: true }),
+    // Phase I.2 — stable external identity. Unique per collection; partial so
+    // any rows not yet backfilled (missing externalId) don't collide on null.
+    // The API boundary looks entities up by externalId, never raw _id.
+    users.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    locations.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    preferences.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    subscriptions.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    orders.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    vendors.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    monthlyLists.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    vendorPayouts.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    ratings.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    taxonomy.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    menuItems.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    menuDrafts.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    deliveries.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    signals.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
   ]);
 }

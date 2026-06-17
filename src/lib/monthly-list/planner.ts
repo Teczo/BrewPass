@@ -1,5 +1,6 @@
 import { ObjectId } from "mongodb";
 
+import { newDocumentMeta } from "@/lib/models";
 import type { DrinkSpec, MonthlyList, MonthlyListEntry, Order } from "@/lib/models";
 import type { RoutingCandidate } from "@/lib/order-engine/routing";
 import { selectVendor } from "@/lib/order-engine/routing";
@@ -113,6 +114,7 @@ export function ordersFromList(list: MonthlyList, now: Date): Order[] {
     .map((entry) => {
       const order: Order = {
         _id: new ObjectId(),
+        ...newDocumentMeta(),
         userId: list.userId,
         subscriptionId: list.subscriptionId,
         date: entry.date,

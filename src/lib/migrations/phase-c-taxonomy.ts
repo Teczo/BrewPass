@@ -5,6 +5,7 @@ import {
   preferenceSignalsCollection,
   preferencesCollection,
 } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import type { DrinkSpec, OptionTaxonomy } from "@/lib/models";
 import { DRINK_SPEC_CATEGORIES, slugify, TAXONOMY_SEED, type SeedOption } from "@/lib/taxonomy";
 
@@ -80,6 +81,7 @@ export async function migratePhaseCUp(): Promise<PhaseCMigrationSummary> {
       {
         $setOnInsert: {
           _id: new ObjectId(),
+          ...newDocumentMeta(),
           ...fields,
           active: true,
           source: "seed" as const,
@@ -115,6 +117,7 @@ export async function migratePhaseCUp(): Promise<PhaseCMigrationSummary> {
       {
         $setOnInsert: {
           _id: new ObjectId(),
+          ...newDocumentMeta(),
           ...fields,
           active: true,
           source: "legacy" as const,

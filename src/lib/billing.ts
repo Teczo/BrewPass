@@ -6,6 +6,7 @@ import {
   subscriptionsCollection,
   usersCollection,
 } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import type { CorporateAccount, Subscription, SubscriptionStatus, User } from "@/lib/models";
 import { PLANS, planByLookupKey, type PlanDefinition } from "@/lib/plans";
 import { getStripe } from "@/lib/stripe";
@@ -153,7 +154,7 @@ export async function syncSubscriptionFromStripe(
         ...(isNewPeriod ? { "quota.used": 0 } : {}),
         updatedAt: now,
       },
-      $setOnInsert: { _id: new ObjectId(), createdAt: now },
+      $setOnInsert: { _id: new ObjectId(), ...newDocumentMeta(), createdAt: now },
     },
     { upsert: true, returnDocument: "after" },
   );
@@ -204,7 +205,7 @@ export async function activateCardOnFileMembership(args: {
         ...(existing ? {} : { "quota.used": 0 }),
         updatedAt: now,
       },
-      $setOnInsert: { _id: new ObjectId(), createdAt: now },
+      $setOnInsert: { _id: new ObjectId(), ...newDocumentMeta(), createdAt: now },
     },
     { upsert: true },
   );
@@ -254,7 +255,7 @@ export async function upsertCorporateMemberSubscription(
         ...(isNewPeriod ? { "quota.used": 0 } : {}),
         updatedAt: now,
       },
-      $setOnInsert: { _id: new ObjectId(), createdAt: now },
+      $setOnInsert: { _id: new ObjectId(), ...newDocumentMeta(), createdAt: now },
     },
     { upsert: true },
   );

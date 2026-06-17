@@ -11,6 +11,7 @@ import {
   usersCollection,
   vendorsCollection,
 } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import type { Order } from "@/lib/models";
 import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
 import { loadSkippedUserIdsForDate } from "@/lib/monthly-list/service";
@@ -366,6 +367,7 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
         const weather = await weatherFor(order.location.geo, order.date);
         await signals.insertOne({
           _id: new ObjectId(),
+          ...newDocumentMeta(),
           userId: order.userId,
           orderId: order._id,
           date: order.date,

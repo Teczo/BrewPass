@@ -1,5 +1,6 @@
 import { ObjectId } from "mongodb";
 
+import { newDocumentMeta } from "@/lib/models";
 import type { GeoPoint, Location, Order, Preference, Subscription, Vendor } from "@/lib/models";
 import { cutoffInstantFor, isoWeekdayOf, utcInstantOfLocal } from "@/lib/time";
 
@@ -72,6 +73,7 @@ export function buildOrder(args: {
     args;
   const order: Order = {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     userId: subscription.userId,
     subscriptionId: subscription._id,
     date: localDate,

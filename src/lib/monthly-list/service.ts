@@ -8,6 +8,7 @@ import {
   vendorMenuItemsCollection,
   vendorsCollection,
 } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import type { DrinkSpec, MonthlyList, MonthlyListEntry, Subscription, User } from "@/lib/models";
 import { ordersFromList, planMonthlyEntries } from "@/lib/monthly-list/planner";
 import { loadRoutingCandidates } from "@/lib/order-engine/routing-data";
@@ -141,7 +142,13 @@ export async function proposeMonthlyList(
         entries,
         updatedAt: now,
       },
-      $setOnInsert: { _id: new ObjectId(), userId: user._id, period, createdAt: now },
+      $setOnInsert: {
+        _id: new ObjectId(),
+        ...newDocumentMeta(),
+        userId: user._id,
+        period,
+        createdAt: now,
+      },
       $unset: { confirmedAt: "" },
     },
     { upsert: true, returnDocument: "after" },

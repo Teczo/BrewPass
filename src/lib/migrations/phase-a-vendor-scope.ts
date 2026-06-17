@@ -4,7 +4,7 @@ import { z } from "zod";
 import { vendorsCollection } from "@/lib/collections";
 import { getDb } from "@/lib/db";
 import type { Vendor } from "@/lib/models";
-import { baseDocumentSchema, geoPointSchema } from "@/lib/models/shared";
+import { baseDocumentSchema, geoPointSchema, newDocumentMeta } from "@/lib/models/shared";
 
 /**
  * Phase A migration: fold v1 `cafes` into `vendors` and scope orders to
@@ -22,22 +22,28 @@ import { baseDocumentSchema, geoPointSchema } from "@/lib/models/shared";
  *   for rolling back to v1 code — the v2 app never reads `cafes`.
  */
 
-/** v1 Cafe shape, kept here so the model could be deleted from the app. */
-export const legacyCafeSchema = baseDocumentSchema.extend({
-  name: z.string(),
-  address: z.string(),
-  geo: geoPointSchema,
-  capabilities: z.array(z.string()),
-  capacityPerHour: z.number(),
-  portalUserSubs: z.array(z.string()),
-  active: z.boolean(),
-});
+/** v1 Cafe shape, kept here so the model could be deleted from the app. v1
+ * records predate the Phase I reservations, so `externalId`/`tenantId` are
+ * omitted here — `cafeToVendor` stamps them when folding a café into a vendor. */
+export const legacyCafeSchema = baseDocumentSchema
+  .omit({ externalId: true, tenantId: true })
+  .extend({
+    name: z.string(),
+    address: z.string(),
+    geo: geoPointSchema,
+    capabilities: z.array(z.string()),
+    capacityPerHour: z.number(),
+    portalUserSubs: z.array(z.string()),
+    active: z.boolean(),
+  });
 export type LegacyCafe = z.infer<typeof legacyCafeSchema>;
 
 /** Pure mapping (unit-tested): same _id; active true/false → active/paused. */
 export function cafeToVendor(cafe: LegacyCafe): Vendor {
   return {
     _id: cafe._id,
+    // v1 cafés predate Phase I; stamp the reserved identity fields on fold.
+    ...newDocumentMeta(),
     businessName: cafe.name,
     status: cafe.active ? "active" : "paused",
     address: cafe.address,

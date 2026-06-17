@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { z } from "zod";
 
 import { optionTaxonomyCollection, vendorMenuItemsCollection } from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models";
 import type { OptionCategory } from "@/lib/models";
 import { vendorMenuItemToJson, type VendorMenuItemJson } from "@/lib/serializers";
 
@@ -87,7 +88,7 @@ export async function writeVendorMenuItem(
     {
       $set: set,
       ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
-      $setOnInsert: { _id: new ObjectId(), vendorId, createdAt: now },
+      $setOnInsert: { _id: new ObjectId(), ...newDocumentMeta(), vendorId, createdAt: now },
     },
     { upsert: true, returnDocument: "after" },
   );

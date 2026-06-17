@@ -10,6 +10,7 @@ import {
 import { getCourierAdapter, resolveCourierProvider } from "@/lib/courier";
 import { priorStatesFor, shouldApplyTransition } from "@/lib/courier/status";
 import type { CourierWebhookEvent } from "@/lib/courier/types";
+import { newDocumentMeta } from "@/lib/models";
 import type { CourierProvider, DeliveryStatus, Order, Vendor } from "@/lib/models";
 import { sendSms } from "@/lib/notifications";
 import { handleOrderDelivered } from "@/lib/payments/payout";
@@ -98,6 +99,7 @@ export async function dispatchForHandoff(
     try {
       await deliveries.insertOne({
         _id: new ObjectId(),
+        ...newDocumentMeta(),
         orderId: order._id,
         status: "pending",
         courierProvider: provider,
@@ -185,6 +187,7 @@ async function insertManualDelivery(orderId: ObjectId, now: Date): Promise<void>
   try {
     await deliveries.insertOne({
       _id: new ObjectId(),
+      ...newDocumentMeta(),
       orderId,
       status: "pending",
       courierProvider: "manual",

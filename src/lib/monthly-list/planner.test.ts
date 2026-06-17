@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { describe, expect, it } from "vitest";
 
+import { newDocumentMeta } from "@/lib/models";
 import type { DrinkSpec, MonthlyList, Vendor } from "@/lib/models";
 import type { CoverageItem } from "@/lib/menu";
 import type { RoutingCandidate } from "@/lib/order-engine/routing";
@@ -24,6 +25,7 @@ const DRINK: DrinkSpec = {
 function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
   return {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     businessName: "Kopi Corner",
     status: "active",
     address: "Jalan Sultan Ismail",
@@ -147,6 +149,7 @@ describe("ordersFromList", () => {
   function makeList(entries: MonthlyList["entries"]): MonthlyList {
     return {
       _id: new ObjectId(),
+      ...newDocumentMeta(),
       userId: new ObjectId(),
       subscriptionId: new ObjectId(),
       period: "2026-06",

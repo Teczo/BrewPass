@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { describe, expect, it } from "vitest";
 
+import { newDocumentMeta } from "@/lib/models";
 import type { Order } from "@/lib/models";
 import { isPayable } from "@/lib/payments/payout";
 
@@ -9,6 +10,7 @@ const now = new Date("2026-06-15T00:00:00Z");
 function makeOrder(overrides: Partial<Order> = {}): Order {
   return {
     _id: new ObjectId(),
+    ...newDocumentMeta(),
     userId: new ObjectId(),
     subscriptionId: new ObjectId(),
     date: "2026-06-15",
