@@ -224,3 +224,29 @@ Run only after the platform is stable (A–H). Build in **small, short-lived fea
 ## Build Order Reminder
 A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G → H → **I (additive, last)**.
 D (routing) and E (charging/payouts) carry almost all the risk. If anything is shaky, it's there. D.5 (monthly list) is what makes "choose once a month" real and feeds scheduled orders into E. **I (service boundary + `/v1` API + webhooks + `externalId`/`tenantId` reservations) is additive and runs only once A–H are stable — it improves the backend without changing the frontend.**
+
+---
+
+## Go-Live TODO (before real customers)
+
+Deferred to keep the initial deploy on Vercel's free **Hobby** plan (Hobby
+allows only daily cron jobs). Revisit these the moment real, paying
+customers come on board:
+
+- [ ] **Re-add the outbound-webhooks cron.** It was removed from
+  `vercel.json` because its `*/5 * * * *` (every-5-minutes) schedule is
+  blocked on Hobby. The route still exists at
+  `src/app/api/cron/webhooks/route.ts` and can be triggered manually
+  (`curl -H "Authorization: Bearer $CRON_SECRET" .../api/cron/webhooks`).
+  When going live, **upgrade Vercel to Pro and restore this entry in
+  `vercel.json`:**
+  ```json
+  { "path": "/api/cron/webhooks", "schedule": "*/5 * * * *" }
+  ```
+  Until then, outbound webhook deliveries (Phase I.5) are enqueued but only
+  swept when the cron is run manually — fine while there are no external
+  webhook subscribers, **not** fine once integrations rely on timely events.
+- [ ] **Confirm the Pro plan covers `maxDuration = 300`.** All cron routes
+  request a 300s budget; Hobby caps function runtime lower. Harmless at test
+  volume (jobs finish in well under a second), but the daily
+  charging/payout sweeps need the headroom at real order volume.
