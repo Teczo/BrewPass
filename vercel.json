@@ -11,10 +11,6 @@
     {
       "path": "/api/cron/payouts",
       "schedule": "0 15 * * *"
-    },
-    {
-      "path": "/api/cron/webhooks",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
