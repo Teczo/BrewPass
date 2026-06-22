@@ -4,6 +4,8 @@ Subscription coffee platform: users subscribe to a monthly plan and get a person
 
 See [CLAUDE.md](./CLAUDE.md) for the full product spec, tech stack, and build phases.
 
+Redesigning the frontend? Start with the [design context pack](./docs/design/README.md) — product brief, screen inventory, design system, and user flows written to be fed into an AI design tool.
+
 ## Stack
 
 Next.js (App Router) + TypeScript + Tailwind · MongoDB Atlas · Auth0 · Stripe · FCM · Vercel (hosting + cron) · Sentry
