@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { addOnsTotalSen } from "@/lib/addons";
 import { vendorDrinkPriceSen } from "@/lib/menu";
 import {
+  corporateAccountsCollection,
   locationsCollection,
   ordersCollection,
   preferencesCollection,
@@ -13,7 +14,7 @@ import {
 } from "@/lib/collections";
 import { newDocumentMeta } from "@/lib/models";
 import { personalPreferenceFilter } from "@/lib/preferences";
-import type { Order } from "@/lib/models";
+import type { Order, Subscription } from "@/lib/models";
 import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
 import { loadSkippedUserIdsForDate } from "@/lib/monthly-list/service";
 import { buildOrder, evaluateCutoff, evaluateGeneration } from "@/lib/order-engine/logic";
@@ -24,6 +25,7 @@ import {
   type RoutingCandidate,
 } from "@/lib/order-engine/routing-data";
 import { chargeOrderCoffee } from "@/lib/payments/charge";
+import { resolveChargeCard } from "@/lib/payments/charge-card";
 import { resolveCommissionBps } from "@/lib/payments/commission";
 import { splitOrderAmount } from "@/lib/payments/money";
 import { recordAcceptance } from "@/lib/quality-service";
@@ -309,41 +311,60 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
     if (!order) break;
     summary.processed += 1;
 
-    const subscription = await subscriptions.findOne({ _id: order.subscriptionId });
-    const decision = evaluateCutoff(subscription);
-
     let confirmed = false;
     let failReason: string | null = null;
-    if (decision.action === "confirm") {
-      if (subscription?.billingMode === "card_on_file") {
-        // Phase E: charge the coffee per-day into the platform balance (the
-        // vendor is paid only after delivery). No quota gate — pay per coffee.
-        // On failure (retry-once-then-skip; rule #3) the order fails uncharged.
-        const outcome = await chargeConfirmedCoffee(order, now);
-        confirmed = outcome.ok;
-        if (!outcome.ok) {
-          await orders.updateOne(
-            { _id: order._id },
-            { $set: { chargeStatus: "failed" as const, updatedAt: now } },
-          );
-          failReason = `charge_failed: ${outcome.reason}`;
-        }
-      } else {
-        // Prepaid (corporate/legacy): guarded decrement, only while the plan
-        // is live and quota remains. No per-coffee charge.
-        const result = await subscriptions.updateOne(
-          {
-            _id: order.subscriptionId,
-            status: { $in: ["active", "trialing"] },
-            $expr: { $lt: ["$quota.used", "$quota.total"] },
-          },
-          { $inc: { "quota.used": 1 }, $set: { updatedAt: now } },
+    let subscription: Subscription | null = null;
+
+    if (order.source === "corporate") {
+      // Phase J.7 — office coffee: charge the COMPANY card (rule #17), never a
+      // member's personal card. No subscription/quota — billed per delivered
+      // coffee. Handoff is gated on the charge (retry-once-then-skip; rule #3);
+      // a failure here can never touch anyone's personal coffee.
+      const outcome = await chargeConfirmedOrder(order, now);
+      confirmed = outcome.ok;
+      if (!outcome.ok) {
+        await orders.updateOne(
+          { _id: order._id },
+          { $set: { chargeStatus: "failed" as const, updatedAt: now } },
         );
-        confirmed = result.modifiedCount === 1;
-        if (!confirmed) failReason = "quota_exhausted";
+        failReason = `charge_failed: ${outcome.reason}`;
       }
     } else {
-      failReason = decision.reason;
+      subscription = order.subscriptionId
+        ? await subscriptions.findOne({ _id: order.subscriptionId })
+        : null;
+      const decision = evaluateCutoff(subscription);
+      if (decision.action === "confirm") {
+        if (subscription?.billingMode === "card_on_file") {
+          // Phase E: charge the coffee per-day into the platform balance (the
+          // vendor is paid only after delivery). No quota gate — pay per coffee.
+          // On failure (retry-once-then-skip; rule #3) the order fails uncharged.
+          const outcome = await chargeConfirmedOrder(order, now);
+          confirmed = outcome.ok;
+          if (!outcome.ok) {
+            await orders.updateOne(
+              { _id: order._id },
+              { $set: { chargeStatus: "failed" as const, updatedAt: now } },
+            );
+            failReason = `charge_failed: ${outcome.reason}`;
+          }
+        } else {
+          // Prepaid (legacy): guarded decrement, only while the plan is live
+          // and quota remains. No per-coffee charge.
+          const result = await subscriptions.updateOne(
+            {
+              _id: order.subscriptionId,
+              status: { $in: ["active", "trialing"] },
+              $expr: { $lt: ["$quota.used", "$quota.total"] },
+            },
+            { $inc: { "quota.used": 1 }, $set: { updatedAt: now } },
+          );
+          confirmed = result.modifiedCount === 1;
+          if (!confirmed) failReason = "quota_exhausted";
+        }
+      } else {
+        failReason = decision.reason;
+      }
     }
 
     if (confirmed) {
@@ -371,27 +392,30 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
 
       // Phase 8: append-only preference signal per confirmed order
       // (unique on orderId — duplicate inserts are ignored). Weather is
-      // recorded so rainy-day patterns can be learned; best-effort.
-      try {
-        const weather = await weatherFor(order.location.geo, order.date);
-        await signals.insertOne({
-          _id: new ObjectId(),
-          ...newDocumentMeta(),
-          userId: order.userId,
-          orderId: order._id,
-          date: order.date,
-          context: {
-            weekday: isoWeekdayOf(order.date),
-            locationLabel: order.location.label,
-            ...(weather !== "unknown" ? { weather } : {}),
-          },
-          chosenDrink: { ...order.drink },
-          userModified: Boolean(order.modifiedByUserAt),
-          createdAt: now,
-          updatedAt: now,
-        });
-      } catch (error) {
-        if (!isDuplicateKeyError(error)) throw error;
+      // recorded so rainy-day patterns can be learned; best-effort. Office
+      // coffee never feeds personal suggestions (rule #16) — personal only.
+      if (order.source === "personal") {
+        try {
+          const weather = await weatherFor(order.location.geo, order.date);
+          await signals.insertOne({
+            _id: new ObjectId(),
+            ...newDocumentMeta(),
+            userId: order.userId,
+            orderId: order._id,
+            date: order.date,
+            context: {
+              weekday: isoWeekdayOf(order.date),
+              locationLabel: order.location.label,
+              ...(weather !== "unknown" ? { weather } : {}),
+            },
+            chosenDrink: { ...order.drink },
+            userModified: Boolean(order.modifiedByUserAt),
+            createdAt: now,
+            updatedAt: now,
+          });
+        } catch (error) {
+          if (!isDuplicateKeyError(error)) throw error;
+        }
       }
     } else {
       const reason = failReason ?? "quota_exhausted";
@@ -409,6 +433,12 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
         { ...order, status: "failed", failureReason: reason },
         now,
       );
+      // Phase J.7: a failed company-card charge skips just this office coffee
+      // and notifies the team admin — personal coffees (other orders) are
+      // untouched. Best-effort; never breaks the cutoff loop.
+      if (order.source === "corporate") {
+        await notifyOwnerOfOfficeChargeFailure(order, reason);
+      }
     }
   }
   return summary;
@@ -420,43 +450,48 @@ export interface CoffeeChargeOutcome {
 }
 
 /**
- * Charge a confirmed card-on-file order for its coffee (Phase E) and, on
- * success, snapshot the commission split onto the order. The charge lands in
- * the platform balance; the vendor's net is transferred only after delivery.
+ * Charge a confirmed order for its coffee and, on success, snapshot the
+ * commission split. Personal orders (Phase E) hit the member's saved card;
+ * office orders (Phase J.7) hit the company card — `resolveChargeCard` enforces
+ * the separation (rule #17), so neither can ever be charged to the other's
+ * card. The charge lands in the platform balance; the vendor's net is
+ * transferred only after delivery.
  *
  * A missing/zero price (vendor hasn't published one) is not a card failure —
- * we confirm the order without charging and leave chargeStatus unset, so no
- * payout is ever released for an uncharged coffee. The caller treats only a
- * real charge failure as a reason to fail the order.
+ * we confirm without charging and leave chargeStatus unset, so no payout is
+ * ever released for an uncharged coffee. Idempotent per order (coffee_<orderId>).
  */
-async function chargeConfirmedCoffee(order: Order, now: Date): Promise<CoffeeChargeOutcome> {
+async function chargeConfirmedOrder(order: Order, now: Date): Promise<CoffeeChargeOutcome> {
   const amountSen = order.priceSen ?? 0;
   if (amountSen <= 0) {
     console.warn(`Order ${order._id.toHexString()} has no price; confirming without charge.`);
     return { ok: true };
   }
 
-  const [users, vendors, orders] = await Promise.all([
+  const [users, accounts, vendors, orders] = await Promise.all([
     usersCollection(),
+    corporateAccountsCollection(),
     vendorsCollection(),
     ordersCollection(),
   ]);
-  const [user, vendor] = await Promise.all([
-    users.findOne({ _id: order.userId }),
-    vendors.findOne({ _id: order.vendorId }),
-  ]);
-
-  const customerId = user?.stripeCustomerId;
-  const paymentMethodId = user?.defaultPaymentMethodId;
-  if (!customerId || !paymentMethodId) {
-    return { ok: false, reason: "no_saved_card" };
-  }
+  const vendor = await vendors.findOne({ _id: order.vendorId });
   if (!vendor) return { ok: false, reason: "vendor_missing" };
+
+  // Resolve the correct card by source — personal → member card, corporate →
+  // company card (rule #17). Only the relevant entity is loaded.
+  const [user, account] = await Promise.all([
+    order.source === "corporate" ? Promise.resolve(null) : users.findOne({ _id: order.userId }),
+    order.source === "corporate" && order.corporateAccountId
+      ? accounts.findOne({ _id: order.corporateAccountId })
+      : Promise.resolve(null),
+  ]);
+  const cardResult = resolveChargeCard(order, { user, account });
+  if (!cardResult.ok) return { ok: false, reason: cardResult.reason };
 
   const result = await chargeOrderCoffee({
     orderId: order._id.toHexString(),
-    customerId,
-    paymentMethodId,
+    customerId: cardResult.card.customerId,
+    paymentMethodId: cardResult.card.paymentMethodId,
     amountSen,
     drinkName: order.drink.drink,
   });
@@ -480,6 +515,46 @@ async function chargeConfirmedCoffee(order: Order, now: Date): Promise<CoffeeCha
     },
   );
   return { ok: true };
+}
+
+/**
+ * Notify the team admin (billing owner) that the company card couldn't be
+ * charged for a member's office coffee, so they can fix it. Best-effort —
+ * never throws. Personal coffees are on personal cards and unaffected.
+ */
+async function notifyOwnerOfOfficeChargeFailure(order: Order, reason: string): Promise<void> {
+  try {
+    if (!order.corporateAccountId) return;
+    const [accounts, users] = await Promise.all([corporateAccountsCollection(), usersCollection()]);
+    const account = await accounts.findOne({ _id: order.corporateAccountId });
+    if (!account) return;
+    const [owner, member] = await Promise.all([
+      users.findOne({ _id: account.billingOwnerUserId }),
+      users.findOne({ _id: order.userId }),
+    ]);
+    if (!owner) return;
+
+    const who = member?.name ?? "a team member";
+    const title = "Office coffee skipped — company card declined";
+    const body =
+      `We couldn't charge the company card for ${who}'s office coffee on ${order.date} ` +
+      `(${reason}). That coffee was skipped. Update the company card to avoid further misses.`;
+
+    const pushResult = await sendPushToUser(owner, { title, body });
+    if (pushResult.invalidTokens.length > 0) {
+      await users.updateOne(
+        { _id: owner._id },
+        { $pull: { fcmTokens: { $in: pushResult.invalidTokens } } },
+      );
+    }
+    await sendEmail({
+      to: owner.email,
+      subject: title,
+      html: `<p>${escapeHtml(body)}</p><p><a href="${process.env.APP_BASE_URL ?? ""}/dashboard/corporate">Manage your company</a></p>`,
+    });
+  } catch (error) {
+    console.error(`Owner notify for office order ${order._id.toHexString()} failed:`, error);
+  }
 }
 
 /**
