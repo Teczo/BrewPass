@@ -3,10 +3,12 @@ import { redirect } from "next/navigation";
 
 import { DeliveryTracker } from "@/components/delivery-tracker";
 import { HealthCard } from "@/components/health-card";
+import { OverlapNotice } from "@/components/overlap-notice";
 import { RateOrder } from "@/components/rate-order";
 import { UpcomingOrder } from "@/components/upcoming-order";
 import { ADD_ON_LIST } from "@/lib/addons";
 import { getCurrentSubscription } from "@/lib/billing";
+import { findUserOverlaps } from "@/lib/corporate/overlap";
 import {
   locationsCollection,
   ordersCollection,
@@ -65,6 +67,11 @@ export default async function DashboardPage() {
       .toArray(),
   ]);
   const hasLiveSubscription = subscription !== null && subscription.status !== "canceled";
+
+  // Phase J.5: advisory same-day personal/office overlap notice. Only shown
+  // until the member sets a standing rule (then overlaps reconcile silently at
+  // generation) — keeping the "user does nothing daily" promise (rule #17).
+  const overlaps = user.overlapRule ? [] : await findUserOverlaps(user._id, new Date());
 
   // Phase G: which recent orders the user has already rated (to show stars).
   const ratingByOrderId = new Map(
@@ -145,6 +152,8 @@ export default async function DashboardPage() {
           </Link>
         </section>
       )}
+
+      {overlaps.length > 0 && <OverlapNotice overlaps={overlaps} />}
 
       {upcomingOrder && (
         <UpcomingOrder

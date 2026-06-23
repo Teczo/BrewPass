@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { generateOfficeOrdersForDate } from "@/lib/corporate/office-orders";
+import { reconcileOverlapsForDate } from "@/lib/corporate/overlap";
 import { rejectUnauthorizedCron } from "@/lib/cron";
 import { generateOrdersForDate, notifyOrdersForDate } from "@/lib/order-engine/engine";
 import { tomorrowLocalDate } from "@/lib/time";
@@ -25,11 +26,15 @@ export async function GET(request: Request) {
   // Phase J.7: office (corporate) orders, generated after personal so the
   // notification pass below covers both.
   const officeGeneration = await generateOfficeOrdersForDate(date, now);
+  // Phase J.5: apply members' standing personal/office overlap rules now that
+  // both sides exist — skips at most one side per the member's own rule, before
+  // the night-before notification goes out. Members without a rule keep both.
+  const overlap = await reconcileOverlapsForDate(date, now);
   const notification = await notifyOrdersForDate(date, now);
 
   console.log(
     "generate-orders:",
-    JSON.stringify({ generation, officeGeneration, notification }),
+    JSON.stringify({ generation, officeGeneration, overlap, notification }),
   );
-  return NextResponse.json({ generation, officeGeneration, notification });
+  return NextResponse.json({ generation, officeGeneration, overlap, notification });
 }
