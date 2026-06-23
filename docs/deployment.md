@@ -1,15 +1,30 @@
 # BrewPass — Production Deployment Guide (v2 Marketplace)
 
 This guide covers the **v2 multi-vendor marketplace** (including the **v2.1**
-courier + AI-menu additions). It supersedes the single-vendor v1 guide: v2
+courier + AI-menu additions and the **v2.2** corporate-teams, vendor-promotions
+and service-boundary additions). It supersedes the single-vendor v1 guide: v2
 adds a vendor portal, an order-routing engine, a standardized menu taxonomy,
 the AI vendor recommender, monthly lists, and **Stripe Connect** payouts;
 v2.1 adds **courier-integrated delivery + in-app tracking** (§6b) and
-**AI-assisted menu onboarding** (folded into §9b). If you ran the v1
-deployment already, the new pieces are §4b (Connect), §6b (courier),
-§9b (Anthropic), the third cron in §2, and the first-run **migrations** in
-§10 — skim those and skip the rest. All of v2.1 is optional and degrades to
-the v2 behaviour when unconfigured.
+**AI-assisted menu onboarding** (folded into §9b); **v2.2** adds:
+
+- **Corporate team accounts (Phase J)** — companies self-managed by a billing
+  owner, staff join by code, and **per-delivered-coffee billing on one company
+  card** (no seats). A member's personal account and their office membership
+  coexist with strictly separate cards (§4c).
+- **Vendor promotions / packs (Phase K)** — vendors run time-boxed discounted
+  packs and campaigns; offices buy a discounted pack instead of per-member
+  coffees. No new infrastructure (§13).
+- **Service boundary, versioned `/v1` API & outbound webhooks (Phase I)** — a
+  thin `/v1` HTTP layer over the domain services, stable `externalId`s, a
+  reserved `tenantId`, and signed outbound lifecycle webhooks (§14). All
+  additive — no existing behaviour changes.
+
+If you ran the v1 deployment already, the new pieces are §4b (Connect),
+§4c (company card), §6b (courier), §9b (Anthropic), the crons in §2, the
+corporate/promotions/webhook sections (§13–§14), and the first-run
+**migrations** in §10 — skim those and skip the rest. All of v2.1/v2.2 is
+optional and degrades to the prior behaviour when unconfigured.
 
 One Vercel project hosts everything (frontend pages, API routes, cron
 jobs). Every other service is SaaS you configure once and connect via
@@ -24,6 +39,7 @@ Architecture recap:
 | Auth (user/vendor/admin)         | Auth0                | §3                            |
 | Subscriptions + card             | Stripe               | §4                            |
 | Vendor payouts                   | Stripe **Connect**   | §4b                           |
+| Company card (corporate)         | Stripe               | §4c                           |
 | Push notifications               | Firebase (FCM)       | §5                            |
 | Geocoding, routing + map         | Google Maps Platform | §6                            |
 | Courier delivery (optional)      | Lalamove             | §6b                           |
@@ -31,6 +47,9 @@ Architecture recap:
 | Email (optional)                 | Resend               | §8                            |
 | Error monitoring                 | Sentry               | §9                            |
 | AI recommender + menu onboarding | Anthropic            | §9b                           |
+| Corporate team accounts          | (no new service)     | §13                           |
+| Vendor promotions / packs        | (no new service)     | §13                           |
+| Versioned `/v1` API + webhooks   | (no new service)     | §14                           |
 | Scheduled jobs                   | Vercel Cron          | automatic from vercel.json    |
 | Weather                          | Open-Meteo           | nothing — keyless             |
 | File storage                     | Vercel Blob          | not used yet; add when needed |
@@ -70,8 +89,12 @@ MONGODB_DB=brewpass
 
 v2 adds several collections (`vendors`, `optionTaxonomy`, `vendorMenuItems`,
 `monthlyLists`, `vendorPayouts`, `commissionConfig`, `ratings`,
-`deliveries`, `preferenceSignals`, …). You don't create them by hand —
-they're provisioned with their indexes by **Set up DB indexes** in §10.
+`deliveries`, `preferenceSignals`, …). v2.2 adds the corporate
+(`corporateAccounts`, `corporateMemberships`, `corporateJoinCodes`), promotions
+(`vendorPromotions`, `packPurchases`), and webhook (`webhookSubscriptions`,
+`webhookDeliveries`) collections, plus the reserved `externalId`/`tenantId`
+fields on every entity. You don't create any of them by hand — they're
+provisioned with their indexes by **Set up DB indexes** in §10.
 
 ## 2. Vercel (frontend + backend + cron)
 
@@ -106,6 +129,27 @@ they're provisioned with their indexes by **Set up DB indexes** in §10.
      Plan note: the cron routes request `maxDuration = 300`, which needs
      the Pro plan (or Fluid compute) once you have real volume. For early
      testing, Hobby works.
+
+   The same generate-orders + cutoff + payouts crons now also drive
+   **corporate office coffee** (Phase J) and **vendor packs** (Phase K) —
+   office orders generate alongside personal ones, charge the **company
+   card** at cutoff (gated exactly like personal coffee), and pay vendors
+   delivery-gated. No extra cron is required for J/K.
+
+   **Deferred 4th cron — outbound webhooks (Phase I.5).** A
+   `/api/cron/webhooks` route exists to sweep queued outbound webhook
+   deliveries, but it is **intentionally not registered in `vercel.json`**
+   because its `*/5 * * * *` schedule is blocked on Vercel's free **Hobby**
+   plan (Hobby allows daily crons only). Outbound events are still enqueued;
+   they're only delivered when the route is triggered manually
+   (`curl -H "Authorization: Bearer $CRON_SECRET" \
+   https://<domain>/api/cron/webhooks`). When you upgrade to **Pro**, restore
+   this entry to `vercel.json` (see the Go-Live TODO in `CLAUDE.md` and §14):
+   ```json
+   { "path": "/api/cron/webhooks", "schedule": "*/5 * * * *" }
+   ```
+   This is fine while there are **no external webhook subscribers**, and
+   **not** fine once an integration relies on timely events.
 6. Smoke test: `https://<domain>/api/health` should return
    `{"ok":true,"db":"up"}`. If `db: "down"`, re-check §1 credentials.
 
@@ -225,6 +269,34 @@ holds). **No delivery → no transfer**, regardless of payout cadence.
 Test Connect end-to-end in test mode: onboard a test vendor (Stripe provides
 test KYC values), let an order reach `delivered`, then run the payouts cron
 (§11) and confirm a transfer appears on the connected account.
+
+## 4c. Corporate company card — per-delivery office billing (Phase J)
+
+Corporate team accounts pay **per delivered office coffee on one company
+card** — there are **no seats** and **no per-seat subscription**. This reuses
+the same Stripe account and webhook from §4; **no new env var or endpoint** is
+needed. What it adds:
+
+- **Company card on file.** The billing owner saves a company card from
+  `/dashboard/corporate` via a Stripe **SetupIntent** (Checkout in `setup`
+  mode → the existing `checkout.session.completed` handler stores
+  `companyStripePaymentMethodId` on the `CorporateAccount`). No upfront charge.
+- **Charge-then-deliver on the company card.** At each day's cutoff, every
+  delivered office coffee (and any vendor pack, §13) is charged to the
+  **company card**, gated identically to personal coffee — the order is only
+  sent to the vendor if the company-card charge succeeds; payout stays
+  delivery-gated; a charged-but-undelivered office coffee **auto-refunds** to
+  the company card.
+- **Strict card separation.** Personal coffee charges the **member's own**
+  card; office coffee charges the **company** card. Neither is ever
+  cross-charged. A company-card failure (retried 3× over ~10 min, then
+  skip-and-notify the owner + member) **never** touches anyone's personal
+  coffee.
+
+No additional Stripe configuration is required beyond §4 — the company card is
+just another saved payment method on the platform Stripe account. Test it the
+same way: save a company card with `4242…`, generate office orders (§13), run
+the cutoff cron, and confirm a per-day PaymentIntent against the company card.
 
 ## 5. Firebase (FCM push)
 
@@ -407,9 +479,12 @@ idempotent and safe to re-run):
 
 1. **Set up DB indexes** — creates every index the app relies on, including
    the unique keys that make order generation, payouts, and webhook
-   handling idempotent. Do not skip this. **Re-run it after upgrading to
-   v2.1** too: it adds the new `vendorMenuDrafts` and courier-delivery
-   indexes (it's idempotent, so re-running is always safe).
+   handling idempotent. Do not skip this. **Re-run it after every upgrade:**
+   v2.1 added the `vendorMenuDrafts` and courier-delivery indexes; v2.2 adds
+   the corporate (`corporateAccounts`/`corporateMemberships`/
+   `corporateJoinCodes`), promotions (`vendorPromotions`/`packPurchases`),
+   webhook (`webhookSubscriptions`/`webhookDeliveries`), `externalId`, and the
+   per-`source` order indexes. It's idempotent, so re-running is always safe.
 2. **Seed menu taxonomy** (Phase C) — seeds the canonical `OptionTaxonomy`
    (drinks, sizes, milks, add-ons, strength) that all subscriber
    preferences and vendor menus reference, and absorbs any legacy v1
@@ -421,10 +496,34 @@ idempotent and safe to re-run):
    collection is left as a rollback backup. On a brand-new database there
    are no cafés to migrate, so this is a no-op.
 
-Rollback (both migrations) is a deliberate API call, not a button:
-`POST /api/admin/migrations/phase-a` (or `phase-c`) with
-`{"direction":"down"}` as admin — use it only together with a rollback to
-v1 code.
+**v2.2 data migrations (Phase I/J — admin API calls, not buttons).** These
+are run once after deploying v2.2, by `POST`ing `{"direction":"up"}` as an
+authenticated admin (mirror the Phase A discipline — each is idempotent and
+has a tested `down`). Run them after **Set up DB indexes** so the new indexes
+exist:
+
+- `POST /api/admin/migrations/phase-i` — **Phase I.2/I.3**: backfills the
+  stable `externalId` (UUID) and the reserved `tenantId` (single constant) on
+  every existing entity. `down` removes the reserved fields.
+- `POST /api/admin/migrations/phase-j` — **Phase J.0**: migrates the legacy
+  `memberUserIds` array into `CorporateMembership` rows (membership becomes a
+  relationship, **not** a `role` mutation — personal accounts are untouched).
+- `POST /api/admin/migrations/phase-j2` — **Phase J.2**: introduces the
+  per-`(userId, scope)` preference key so a member holds a personal preference
+  **and** a separate office preference; reindexes `{ userId }` → `{ userId,
+  scope }`.
+- `POST /api/admin/migrations/phase-j7` — **Phase J.7**: adds the order
+  `source` (`personal` | `corporate`) and moves the unique order key
+  `(userId, date)` → `(userId, date, source)`, so a member can hold a personal
+  **and** an office order on the same day.
+
+(There is no separate Phase K migration — promotions/packs are additive
+collections provisioned by **Set up DB indexes**.)
+
+Rollback (any migration) is a deliberate API call, not a button:
+`POST /api/admin/migrations/phase-a` (or `phase-c` / `phase-i` / `phase-j` /
+`phase-j2` / `phase-j7`) with `{"direction":"down"}` as admin — use it only
+together with a rollback to the matching code.
 
 ### Standing up Vendor #1 / new vendors
 
@@ -484,6 +583,26 @@ https://<domain>/api/cron/generate-orders` → JSON summary
       screenshot at `/vendor/menu`, review the extracted draft, confirm, and
       see the items published (and that with the key unset it cleanly tells
       you to map manually)
+- [ ] **Corporate (Phase J):** create a company at `/dashboard/corporate`,
+      save the **company card**, generate a **join code**; join from a second
+      account by code and confirm that account's personal `role`/subscription
+      are **unchanged**; set an office preference; run generate-orders +
+      cutoff and confirm the office order charged the **company** card while
+      the member's personal coffee (if any) charged the **member's** card —
+      never crossed
+- [ ] **Corporate failure isolation:** force a company-card failure and
+      confirm only that day's office coffee is skipped (owner + member
+      notified) while personal coffee is untouched
+- [ ] **Vendor pack (Phase K):** create a pack at `/vendor/promotions`, buy it
+      for the office at `/dashboard/corporate`, assign members, and confirm the
+      company card is charged for (pack + top-ups) and each coffee is a
+      delivery-gated order; take the pack's vendor offline and confirm the pack
+      day is **skipped/refunded** (not rerouted)
+- [ ] **`/v1` API (Phase I):** call e.g. `GET /v1/vendors` (authenticated) and
+      confirm responses expose `externalId`, never raw `_id`
+- [ ] **Outbound webhooks (Phase I.5):** register a subscriber via
+      `POST /api/admin/webhooks`, trigger an order lifecycle event, manually
+      run `/api/cron/webhooks`, and confirm a signed delivery arrives
 - [ ] Sentry: throw a test error, see it in the dashboard
 
 ## 12. Ongoing operations
@@ -512,3 +631,77 @@ https://<domain>/api/cron/generate-orders` → JSON summary
 - **Mobile apps**: see `docs/mobile.md` once the web deployment is stable —
   the same web build (now including the vendor and tracking UIs) loads in
   the shell.
+- **Corporate teams**: owners self-serve at `/dashboard/corporate` (company
+  card, join codes, office defaults, member roster, autonomy toggles, packs);
+  members join via the same page. Operator involvement is limited to the
+  normal vendor/commission/dispute tooling — there's no per-company admin step.
+- **Vendor promotions**: vendors self-serve at `/vendor/promotions`. K.3
+  platform-suggested campaigns are **suggestions only** — the vendor decides;
+  the platform never changes a vendor's prices on its own.
+
+## 13. Corporate team accounts & vendor promotions (Phase J / K)
+
+Both ship as **application features with no new infrastructure** — same
+Vercel project, same Stripe account, same crons. The deployment surface is:
+the §10 migrations (J.0/J.2/J.7), the §4c company card, and re-running **Set
+up DB indexes** for the new collections. Operationally:
+
+- **Corporate (Phase J).** One **billing owner** runs a company; staff **join
+  by code** (rotatable, optional redemption cap, optional single-use codes) and
+  **link their existing personal account** — joining never mutates their
+  personal `role`, subscription, or preferences (rule #16). Each membership
+  carries its **own office preference** (defaulting to the owner's
+  `officeDefaults`). The owner sets server-enforced **autonomy toggles**
+  (`selectionMode` bundle/individual, `memberSelfSelect`, `memberCanDecline`).
+  Office coffee is billed **per delivery on the company card** (§4c); personal
+  and office orders coexist on the same day on separate cards (unique per
+  `(userId, date, source)`), with an **advisory, non-blocking** same-day
+  overlap notice (default keep both).
+- **Vendor packs / promotions (Phase K).** Vendors run time-boxed
+  `VendorPromotion`s — **packs** (`packSize`/`packPrice`, `fixed_drink` or
+  `buyer_choice`), **buy-N-get-M**, and **time-window discounts**. A team admin
+  can buy a discounted **pack + individual top-ups** in one `PackPurchase` and
+  assign members; **unassigned slots are paid-for-and-skipped**. Packs are
+  **vendor-pinned and do not reroute** — if the pack vendor goes offline that
+  day's pack is **skipped/refunded** (the one sanctioned exception to taxonomy
+  portability, rule #20). Commission applies to the pack gross; a pack may carry
+  its own `commissionRateOverride` (confirm before hardcoding — rule #11).
+  Charge-then-deliver and delivery-gated payout are unchanged.
+
+## 14. Versioned `/v1` API & outbound webhooks (Phase I)
+
+Additive backend boundary; **no frontend behaviour changes** and **no new
+service to provision**.
+
+- **`/v1` API.** Thin, Zod-validated, authenticated HTTP handlers over the
+  domain services live under `/api/v1/*` (`me`, `vendors`, `orders`,
+  `monthly-list`). They expose the stable **`externalId`** at the boundary and
+  **never** raw Mongo `_id`. The existing frontend keeps calling its own
+  routes/services unchanged.
+- **Stable IDs / reserved tenant.** Every entity carries `externalId` (UUID,
+  generated on create) and a reserved `tenantId` (single constant — **no
+  multi-tenant logic is built**, rule #14). Backfilled by the §10 `phase-i`
+  migration.
+- **Outbound webhooks.** Registered subscribers receive **signed** lifecycle
+  events — `order.scheduled`, `vendor.assigned`, `order.confirmed`,
+  `order.delivered`, `order.failed`, `payout.released`, `refund.issued`.
+  Emission is **best-effort and non-blocking** — a webhook failure never blocks
+  or alters a core order/charge/payout action (exactly like notifications).
+  Delivery is idempotent with retries.
+  - **Manage subscribers (admin):** `GET`/`POST /api/admin/webhooks` to
+    list/create (a fresh signing secret is shown **once** on create);
+    `PATCH`/`DELETE /api/admin/webhooks/:id` to pause/rotate/remove.
+  - **Delivery sweep:** the `/api/cron/webhooks` route drains the queue. It is
+    **not registered in `vercel.json`** on the Hobby plan (its `*/5 * * * *`
+    schedule is Pro-only). Trigger it manually until you upgrade:
+    ```bash
+    curl -H "Authorization: Bearer $CRON_SECRET" \
+      https://<domain>/api/cron/webhooks
+    ```
+    On **Pro**, restore the entry in `vercel.json`:
+    ```json
+    { "path": "/api/cron/webhooks", "schedule": "*/5 * * * *" }
+    ```
+    Until then events are **enqueued but only delivered on a manual run** —
+    acceptable with no external subscribers, **not** acceptable once an
+    integration depends on timely events.

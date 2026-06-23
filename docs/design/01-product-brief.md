@@ -64,8 +64,10 @@ as dense as admin.
 ## What subscribers get (feature surface)
 
 - 3-step onboarding (profile → preferences → locations).
-- Plans: **Lite RM149/12**, **Weekday RM199/22**, **Premium RM299/31**,
-  **Student RM149/22** (verified), **Corporate RM199/seat** (per-seat 22/mo).
+- Personal plans: **Lite RM149/12**, **Weekday RM199/22**, **Premium
+  RM299/31**, **Student RM149/22** (verified). (Office coffee is **not** a
+  personal plan tier — it's a separate corporate flow billed per delivery, see
+  "corporate teams" below.)
 - Add-ons (pastries/drinks) charged per order on top of the coffee.
 - A **"usual"** drink + weekly schedule + delivery locations.
 - **Vendor choice**: pick a preferred café, or answer a short questionnaire and
@@ -74,6 +76,35 @@ as dense as admin.
   user reviews the whole month, edits any day, confirms once.
 - Per-day editing until that day's cutoff; skip days; live delivery tracking
   when a coffee is out for delivery; post-delivery rating; opt-in health summary.
+- **Join a company** with a code to also receive office coffee — without
+  touching their personal account. A person can be **both** a personal
+  subscriber and an office member at once; the two never override each other,
+  and they may even get a personal *and* an office coffee on the same day
+  (charged to different cards). Any same-day overlap is surfaced as an
+  **advisory, non-blocking** notice (default: keep both) — never a daily prompt.
+
+## What corporate teams get (Phase J)
+
+A company is run by a **billing owner**, with staff as members. There are **no
+seats and no per-seat subscription** — the company pays **per delivered office
+coffee on one company card** (charge-then-deliver, same as personal).
+
+- **Owner dashboard** (`/dashboard/corporate`): save the **company card**,
+  generate/share/rotate a **join code**, set **office defaults** (drink,
+  schedule, location), and see a **member roster** (joined? office coffee set?
+  today's/tomorrow's selection, want vs skip, delivery status).
+- **Owner autonomy toggles** (server-enforced, not just UI): **selection mode**
+  `bundle` (owner picks one office coffee for everyone) vs `individual` (each
+  member picks); **`memberSelfSelect`** (may members choose/edit at all);
+  **`memberCanDecline`** (may members skip a day).
+- **Members** join by code from the same screen, keeping their personal account
+  fully intact, get their **own office preference**, and a lightweight **office
+  coffee tracker** (compact "arriving ~9:05 · Flat White · Level 12", map
+  optional).
+- **Vendor packs** (Phase K): when a vendor offers a discounted **pack**, the
+  owner can buy it for the team (pack + individual top-ups, assign members)
+  instead of per-member coffees — surfaced as an **optional savings nudge**,
+  never a forced comparison.
 
 ## What vendors get
 
@@ -87,6 +118,10 @@ as dense as admin.
     (per-order vs daily batch), Stripe Connect onboarding.
   - **Profile & hours**: address, service area, operating hours, status controls.
   - **Quality scorecard**: rating, acceptance rate, on-time rate (can auto-pause).
+  - **Promotions** (Phase K): create time-boxed **packs** (discounted N-coffee
+    bundles offices buy), **buy-N-get-M**, and **time-window discounts** for
+    quiet hours — plus platform-**suggested** campaigns (suggestions only; the
+    vendor always decides).
 
 ## What admin gets
 
@@ -124,4 +159,13 @@ as dense as admin.
    Thumb-reachable actions, bottom-sheet patterns welcome.
 8. **Trust at money moments.** Charging, payouts, refunds, and disputes must read
    as precise and trustworthy across all three apps.
+9. **Personal and office coffee never override each other.** Joining a company
+   doesn't change a person's personal account; personal coffee bills the
+   member's card and office coffee bills the company card — never crossed. Any
+   same-day overlap is **advisory** (default keep both), never a mandatory daily
+   choice. Don't design a corporate flow that mutates or hides the personal one.
+10. **Promotions are optional savings, never forced shopping.** The team admin's
+    default stays one-tap "buy the usual"; packs/campaigns are optional nudges.
+    Keep **"Vendor Pack"** (a vendor-priced product) and **`bundle` selection
+    mode** (owner picks one drink for everyone) visually and verbally distinct.
 </content>

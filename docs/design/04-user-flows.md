@@ -51,9 +51,43 @@ rules live in [`USER_GUIDE.md`](../../USER_GUIDE.md).
   confirm, easy per-day override) — not a spreadsheet.
 
 ### F5 — Manage billing / plan changes
-1. **`/dashboard/billing`** → change plan, pause, cancel, update card.
-2. Student → verification gate; Corporate → seat management at
-   **`/dashboard/corporate`** (invite members, each with own quota).
+1. **`/dashboard/billing`** → change personal plan, pause, cancel, update card.
+2. Student → verification gate. (Office coffee is **not** here — it's the
+   corporate flow, F5b–F5d, billed per delivery, not a personal plan.)
+
+### F5b — Join a company by code (member, keeps personal account)
+1. **`/dashboard/corporate`** → `join-company-panel` → enter a **join code**.
+2. The account is **linked** to the company — personal `role`, subscription, and
+   preferences are **untouched**; a `CorporateMembership` is created.
+3. Member sets their **office preference** (defaults to the owner's office
+   defaults); it's separate from their personal "usual".
+- **Design focus:** make "this does not change your personal account" obvious;
+  joining is additive, never a takeover.
+
+### F5c — Receive office coffee + same-day overlap (member)
+1. Office coffee generates and charges on the **company card** (member does
+   nothing daily — same calm promise as personal).
+2. On the **Dashboard**, `office-coffee-tracker` shows today's office coffee
+   (compact ETA/status) **alongside** the personal coffee.
+3. If both a personal and an office coffee land the same day, `overlap-notice`
+   appears: **advisory**, dismissible, one-tap "cancel one" + remember-my-choice.
+   **Default is keep both** — never a forced choice.
+- **Design focus:** two coffees, two cards, zero conflict; the notice is a gentle
+  heads-up, not a daily checkout.
+
+### F5d — Run a company (owner)
+1. **`/dashboard/corporate`** owner dashboard: save the **company card** (Stripe
+   SetupIntent, no upfront charge).
+2. Generate/share/rotate a **join code** (reusable or single-use, optional
+   redemption cap); set **office defaults** (drink/schedule/location).
+3. Set **autonomy toggles** — `selectionMode` bundle vs individual,
+   `memberSelfSelect`, `memberCanDecline` (server-enforced).
+4. Watch the **member roster** (joined?, office coffee set?, today/tomorrow,
+   want vs skip, delivery status); set the bundle drink or, where allowed, toggle
+   want/skip for a member.
+5. Optionally buy a vendor **pack** for the team (`office-pack-panel`, F13).
+- **Design focus:** the owner's core job is "buy the team's coffee with minimal
+  friction" — a one-tap default, with controls available but not in the way.
 
 ---
 
@@ -91,6 +125,35 @@ rules live in [`USER_GUIDE.md`](../../USER_GUIDE.md).
 3. View statements + payout history.
 - **Design focus:** never imply instant payout at order time; held vs released
   must be unmistakable.
+
+### F-promo — Run a promotion (vendor, Phase K)
+1. **`/vendor/promotions`** → create a **pack** (`packSize` + `packPrice`,
+   `fixed_drink` or `buyer_choice`), **buy-N-get-M**, or **time-window discount**,
+   each with a validity window.
+2. Optionally act on a **platform-suggested** campaign (e.g. "discount your
+   quiet 2–4pm") — a suggestion the vendor accepts or ignores.
+3. Activate; offices in range can now buy it (F13). Packs are **vendor-pinned**:
+   they don't reroute, so the vendor's price always holds.
+- **Design focus:** packs are *this vendor's* priced product; suggestions are
+  advisory, never auto-applied.
+
+---
+
+## 🏢 Corporate (cross-persona)
+
+### F13 — Buy a vendor pack for the office (owner, Phase K)
+1. **`/dashboard/corporate`** → `office-pack-panel` shows packs from in-range
+   vendors as an **optional savings nudge** ("a 10-pack is RM12 cheaper than your
+   usual 8 — use it?"). Ignoring it leaves the one-tap "buy the usual".
+2. Buy the **pack + individual top-ups** if the team is larger than the pack;
+   **assign** members to coffees (or auto-fill). Unassigned slots are
+   **paid-for-and-skipped** — still cheaper, and expected.
+3. Editable until that day's cutoff; the company card is charged for (pack +
+   top-ups) at cutoff; each coffee is a delivery-gated order.
+4. If the pack's vendor goes **offline**, the day's pack is **skipped/refunded**
+   (not rerouted) and the owner notified.
+- **Design focus:** optional savings, never forced comparison shopping; keep
+  **"Vendor Pack"** distinct from `bundle` selection mode.
 
 ---
 
