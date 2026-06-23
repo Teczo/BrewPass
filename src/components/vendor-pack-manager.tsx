@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import type { CampaignSuggestion } from "@/lib/promotions/campaign-suggestions";
 import type { DrinkOptions } from "@/lib/taxonomy-options";
 
 export interface DrinkSpecJson {
@@ -69,12 +70,21 @@ function describe(p: VendorPromotionJson): string {
   return `${p.discountPct}% off ${p.windowStart}–${p.windowEnd}`;
 }
 
+/** YYYY-MM-DD `days` ahead of today, used to pre-fill a suggestion's window. */
+function localDatePlus(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export function VendorPackManager({
   promotions,
   drinkOptions,
+  suggestions = [],
 }: {
   promotions: VendorPromotionJson[];
   drinkOptions: DrinkOptions;
+  suggestions?: CampaignSuggestion[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -124,6 +134,29 @@ export function VendorPackManager({
     );
   }
 
+  /** Pre-fill the create form from a platform suggestion. The vendor still
+   * reviews and clicks Create — suggestions never create a promotion (rule #21). */
+  function applySuggestion(suggestion: CampaignSuggestion) {
+    const { prefill } = suggestion;
+    setError(null);
+    setType(prefill.type);
+    setName(prefill.name);
+    if (!validFrom) setValidFrom(localDatePlus(0));
+    if (!validUntil) setValidUntil(localDatePlus(14));
+    if (prefill.type === "time_window_discount") {
+      setDiscountPct(prefill.discountPct);
+      setWindowStart(prefill.windowStart);
+      setWindowEnd(prefill.windowEnd);
+      setDays(prefill.applicableDays);
+    } else {
+      setPackSize(prefill.packSize);
+      setPackMode(prefill.packMode);
+    }
+    if (typeof document !== "undefined") {
+      document.getElementById("create-promotion")?.scrollIntoView({ behavior: "smooth" });
+    }
+  }
+
   function create() {
     const common = { type, name, validFrom, validUntil };
     let payload: Record<string, unknown>;
@@ -152,6 +185,36 @@ export function VendorPackManager({
   return (
     <div className="flex flex-col gap-6">
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {suggestions.length > 0 && (
+        <section className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 p-4">
+          <h2 className="font-semibold text-amber-900">Suggested for you</h2>
+          <p className="text-xs text-amber-700">
+            Ideas from your own order history. Optional — apply one to pre-fill the form, then review
+            and edit before you launch.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {suggestions.map((s, i) => (
+              <li
+                key={`${s.kind}-${i}`}
+                className="flex items-start justify-between gap-3 rounded-md border border-amber-200 bg-white p-3 text-sm"
+              >
+                <span>
+                  <span className="font-medium">{s.title}</span>
+                  <span className="block text-xs text-neutral-500">{s.message}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => applySuggestion(s)}
+                  className="shrink-0 rounded-md border border-amber-800 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                >
+                  Use this
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4">
         <h2 className="font-semibold">Your promotions</h2>
@@ -203,7 +266,10 @@ export function VendorPackManager({
         )}
       </section>
 
-      <section className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4">
+      <section
+        id="create-promotion"
+        className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4"
+      >
         <h2 className="font-semibold">Create a promotion</h2>
         <div className="flex flex-wrap gap-2">
           {(

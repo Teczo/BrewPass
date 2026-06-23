@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { VendorPackManager } from "@/components/vendor-pack-manager";
 import { getSession } from "@/lib/auth0";
 import { vendorPromotionsCollection } from "@/lib/collections";
+import { loadCampaignSuggestions } from "@/lib/promotions/campaign-suggestions";
 import { vendorPromotionToJson } from "@/lib/promotions/serialize";
 import { drinkOptionsFrom, loadActiveTaxonomy } from "@/lib/taxonomy";
 import { DEFAULT_DRINK_OPTIONS } from "@/lib/taxonomy-options";
@@ -18,9 +19,10 @@ export default async function VendorPromotionsPage() {
   const context = await getCurrentVendorContext();
   if (!context) redirect("/vendor");
 
-  const [promos, taxonomy] = await Promise.all([
+  const [promos, taxonomy, suggestions] = await Promise.all([
     vendorPromotionsCollection(),
     loadActiveTaxonomy(),
+    loadCampaignSuggestions(context.vendor._id),
   ]);
   const docs = await promos
     .find({ vendorId: context.vendor._id })
@@ -46,6 +48,7 @@ export default async function VendorPromotionsPage() {
       <VendorPackManager
         promotions={docs.map(vendorPromotionToJson)}
         drinkOptions={drinkOptionsFrom(taxonomy) ?? DEFAULT_DRINK_OPTIONS}
+        suggestions={suggestions}
       />
     </main>
   );
