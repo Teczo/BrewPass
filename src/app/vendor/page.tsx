@@ -244,6 +244,9 @@ export default async function VendorPortalPage() {
           <Link href="/vendor/capacity" className="text-sm text-amber-800 hover:underline">
             Capacity
           </Link>
+          <Link href="/vendor/promotions" className="text-sm text-amber-800 hover:underline">
+            Packs
+          </Link>
           <Link href="/vendor/earnings" className="text-sm text-amber-800 hover:underline">
             Earnings
           </Link>

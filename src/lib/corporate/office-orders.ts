@@ -15,6 +15,10 @@ import {
   selectVendor,
   type RoutingCandidate,
 } from "@/lib/order-engine/routing-data";
+import {
+  loadPackCoverageByCompany,
+  memberGenerationDecision,
+} from "@/lib/promotions/pack-coverage";
 import { isoWeekdayOf, localDateOf, localTimeOf } from "@/lib/time";
 import { emitOrderEvent } from "@/lib/webhooks/emit";
 
@@ -46,13 +50,17 @@ export async function generateOfficeOrdersForDate(
   localDate: string,
   now: Date = new Date(),
 ): Promise<OfficeGenerationSummary> {
-  const [memberships, accounts, locations, orders, routingCandidates] = await Promise.all([
-    corporateMembershipsCollection(),
-    corporateAccountsCollection(),
-    locationsCollection(),
-    ordersCollection(),
-    loadRoutingCandidates(localDate),
-  ]);
+  const [memberships, accounts, locations, orders, routingCandidates, packCoverage] =
+    await Promise.all([
+      corporateMembershipsCollection(),
+      corporateAccountsCollection(),
+      locationsCollection(),
+      ordersCollection(),
+      loadRoutingCandidates(localDate),
+      // Phase K.1: companies with a Vendor Pack that day drive coverage via the
+      // pack flow, not normal per-member generation.
+      loadPackCoverageByCompany(localDate),
+    ]);
 
   const candidateByVendor = new Map<string, RoutingCandidate>(
     routingCandidates.map((candidate) => [candidate.vendor._id.toHexString(), candidate]),
@@ -72,6 +80,16 @@ export async function generateOfficeOrdersForDate(
   for (const membership of activeMembers) {
     const memId = membership._id.toHexString();
     const accKey = membership.corporateAccountId.toHexString();
+
+    // Phase K.1: skip members covered by their company's pack — assigned
+    // members get a vendor-pinned pack order at cutoff; uncovered members of a
+    // packed company get no office coffee. Top-up members fall through and
+    // generate a normal routed office order.
+    const decision = memberGenerationDecision(packCoverage.get(accKey), memId);
+    if (decision !== "generate") {
+      summary.skipped.push({ membershipId: memId, reason: decision });
+      continue;
+    }
 
     let account = accountCache.get(accKey);
     if (account === undefined) {
