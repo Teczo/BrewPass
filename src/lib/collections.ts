@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import type {
   CommissionConfig,
   CorporateAccount,
+  CorporateJoinCode,
   CorporateMembership,
   Delivery,
   Location,
@@ -90,6 +91,10 @@ export async function corporateMembershipsCollection(): Promise<Collection<Corpo
   return (await getDb()).collection<CorporateMembership>("corporateMemberships");
 }
 
+export async function corporateJoinCodesCollection(): Promise<Collection<CorporateJoinCode>> {
+  return (await getDb()).collection<CorporateJoinCode>("corporateJoinCodes");
+}
+
 export async function preferenceSignalsCollection(): Promise<Collection<PreferenceSignal>> {
   return (await getDb()).collection<PreferenceSignal>("preferenceSignals");
 }
@@ -130,6 +135,7 @@ export async function ensureIndexes(): Promise<void> {
     webhookSubscriptions,
     webhookDeliveries,
     corporateMemberships,
+    corporateJoinCodes,
   ] = await Promise.all([
     usersCollection(),
     locationsCollection(),
@@ -149,6 +155,7 @@ export async function ensureIndexes(): Promise<void> {
     webhookSubscriptionsCollection(),
     webhookDeliveriesCollection(),
     corporateMembershipsCollection(),
+    corporateJoinCodesCollection(),
   ]);
 
   await Promise.all([
@@ -282,6 +289,14 @@ export async function ensureIndexes(): Promise<void> {
     // one membership across companies, plus their untouched personal account).
     corporateMemberships.createIndex({ userId: 1 }),
     corporateMemberships.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    // Phase J.1 — join codes. Redemption looks a code up directly, so it is
+    // globally unique; the owner's portal lists a company's codes by account.
+    corporateJoinCodes.createIndex({ code: 1 }, { unique: true }),
+    corporateJoinCodes.createIndex({ corporateAccountId: 1 }),
+    corporateJoinCodes.createIndex(
       { externalId: 1 },
       { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
     ),
