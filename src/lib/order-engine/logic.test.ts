@@ -168,7 +168,8 @@ describe("buildOrder", () => {
     });
 
     expect(order.userId.equals(sub.userId)).toBe(true);
-    expect(order.subscriptionId.equals(sub._id)).toBe(true);
+    expect(order.subscriptionId?.equals(sub._id)).toBe(true);
+    expect(order.source).toBe("personal");
     expect(order.date).toBe(WEDNESDAY);
     expect(order.status).toBe("scheduled");
     expect(order.assignmentMethod).toBe("ai_routed");

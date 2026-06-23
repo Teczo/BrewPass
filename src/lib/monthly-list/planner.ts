@@ -117,6 +117,7 @@ export function ordersFromList(list: MonthlyList, now: Date): Order[] {
         ...newDocumentMeta(),
         userId: list.userId,
         subscriptionId: list.subscriptionId,
+        source: "personal",
         date: entry.date,
         drink: { ...entry.drink },
         location: {

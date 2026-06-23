@@ -35,6 +35,9 @@ async function refundQuotaOnce(orderId: ObjectId, now: Date): Promise<boolean> {
   );
   if (!claimed) return false;
 
+  // Office (corporate) orders have no subscription/quota — nothing to credit.
+  if (!claimed.subscriptionId) return true;
+
   const subscriptions = await subscriptionsCollection();
   await subscriptions.updateOne(
     { _id: claimed.subscriptionId, "quota.used": { $gt: 0 } },

@@ -76,6 +76,7 @@ export function buildOrder(args: {
     ...newDocumentMeta(),
     userId: subscription.userId,
     subscriptionId: subscription._id,
+    source: "personal",
     date: localDate,
     drink: { ...preference.defaultDrink },
     location: {

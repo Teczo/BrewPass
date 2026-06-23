@@ -166,9 +166,10 @@ export async function ensureIndexes(): Promise<void> {
     preferences.createIndex({ userId: 1, scope: 1 }, { unique: true }),
     subscriptions.createIndex({ userId: 1 }),
     subscriptions.createIndex({ stripeSubscriptionId: 1 }, { unique: true }),
-    // Idempotency: one order per user per local date — the cron can never
-    // double-generate (critical rule #1).
-    orders.createIndex({ userId: 1, date: 1 }, { unique: true }),
+    // Idempotency: one order per (user, date, source) — the cron can never
+    // double-generate (critical rule #1). Source lets a member hold a personal
+    // and an office order on the same day (Phase J, rule #17).
+    orders.createIndex({ userId: 1, date: 1, source: 1 }, { unique: true }),
     orders.createIndex({ vendorId: 1, date: 1 }),
     orders.createIndex({ status: 1, cutoffAt: 1 }),
     // One monthly list per user per period; generation upserts on this key.

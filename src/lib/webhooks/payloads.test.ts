@@ -24,6 +24,7 @@ describe("orderEventData", () => {
       tenantId: DEFAULT_TENANT_ID,
       userId: new ObjectId(),
       subscriptionId: new ObjectId(),
+      source: "personal",
       date: "2026-06-15",
       drink: { drink: "Latte", size: "regular", milk: "Oat", sugar: 0, strength: "regular" },
       location: {
