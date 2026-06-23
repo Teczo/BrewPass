@@ -12,6 +12,7 @@ import {
   vendorsCollection,
 } from "@/lib/collections";
 import { newDocumentMeta } from "@/lib/models";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import type { Order } from "@/lib/models";
 import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
 import { loadSkippedUserIdsForDate } from "@/lib/monthly-list/service";
@@ -85,7 +86,7 @@ export async function generateOrdersForDate(
       continue;
     }
 
-    const preference = await preferences.findOne({ userId: subscription.userId });
+    const preference = await preferences.findOne(personalPreferenceFilter(subscription.userId));
 
     const decision = evaluateGeneration(subscription, preference, localDate);
     if (!decision.ok) {

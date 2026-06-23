@@ -16,6 +16,7 @@ import {
 import { formatMyr } from "@/lib/format";
 import { summarizeHealth } from "@/lib/health";
 import { PLANS } from "@/lib/plans";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import { locationToJson, orderToJson } from "@/lib/serializers";
 import { drinkOptionsFrom, loadActiveTaxonomy } from "@/lib/taxonomy";
 import { DEFAULT_DRINK_OPTIONS } from "@/lib/taxonomy-options";
@@ -54,7 +55,7 @@ export default async function DashboardPage() {
   const today = localDateOf(new Date());
   const [locationDocs, preference, subscription, upcomingOrder, recentOrders] = await Promise.all([
     locations.find({ userId: user._id }).sort({ createdAt: 1 }).toArray(),
-    preferences.findOne({ userId: user._id }),
+    preferences.findOne(personalPreferenceFilter(user._id)),
     getCurrentSubscription(user._id),
     orders.findOne({ userId: user._id, date: { $gte: today } }, { sort: { date: 1 } }),
     orders

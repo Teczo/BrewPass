@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { preferencesCollection, vendorsCollection } from "@/lib/collections";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
 export const runtime = "nodejs";
@@ -43,7 +44,7 @@ export async function PUT(request: Request) {
   }
 
   const preferences = await preferencesCollection();
-  const preference = await preferences.findOne({ userId: user._id });
+  const preference = await preferences.findOne(personalPreferenceFilter(user._id));
   if (!preference) {
     return NextResponse.json(
       { error: "Set your usual drink and schedule before choosing a vendor." },

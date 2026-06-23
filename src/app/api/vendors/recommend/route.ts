@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { locationsCollection, preferencesCollection } from "@/lib/collections";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { PRIORITY_KEYS, recommendVendor } from "@/lib/vendor-recommender";
 import { loadVendorCardsForUser } from "@/lib/vendor-selection";
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
     preferencesCollection(),
     locationsCollection(),
   ]);
-  const preference = await preferences.findOne({ userId: user._id });
+  const preference = await preferences.findOne(personalPreferenceFilter(user._id));
   const location = preference
     ? await locations.findOne({ _id: preference.defaultLocationId, userId: user._id })
     : null;

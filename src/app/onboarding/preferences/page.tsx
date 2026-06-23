@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PreferencesForm } from "@/components/preferences-form";
 import { StepIndicator } from "@/components/step-indicator";
 import { locationsCollection, preferencesCollection } from "@/lib/collections";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import { locationToJson, preferenceToJson } from "@/lib/serializers";
 import { drinkOptionsFrom, loadActiveTaxonomy } from "@/lib/taxonomy";
 import { DEFAULT_DRINK_OPTIONS } from "@/lib/taxonomy-options";
@@ -21,7 +22,7 @@ export default async function OnboardingPreferencesPage() {
   ]);
   const [locationDocs, preference, taxonomy] = await Promise.all([
     locations.find({ userId: user._id }).sort({ createdAt: 1 }).toArray(),
-    preferences.findOne({ userId: user._id }),
+    preferences.findOne(personalPreferenceFilter(user._id)),
     loadActiveTaxonomy(),
   ]);
 

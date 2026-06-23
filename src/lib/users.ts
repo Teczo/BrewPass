@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth0";
 import { locationsCollection, preferencesCollection, usersCollection } from "@/lib/collections";
 import { newDocumentMeta } from "@/lib/models";
 import type { User } from "@/lib/models";
+import { personalPreferenceFilter } from "@/lib/preferences";
 
 /**
  * Resolve the logged-in Auth0 session to our User document, creating it on
@@ -52,7 +53,7 @@ export async function getOnboardingStatus(user: User): Promise<OnboardingStatus>
   ]);
   const [locationCount, preference] = await Promise.all([
     locations.countDocuments({ userId: user._id }),
-    preferences.findOne({ userId: user._id }),
+    preferences.findOne(personalPreferenceFilter(user._id)),
   ]);
 
   return {

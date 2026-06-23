@@ -65,3 +65,16 @@ export const preferenceInputSchema = z.object({
   defaultLocationId: z.string().regex(/^[0-9a-f]{24}$/i, "expected an ObjectId"),
 });
 export type PreferenceInput = z.infer<typeof preferenceInputSchema>;
+
+/** Phase J.2 — the owner's office defaults that seed members' office
+ * preferences. Same shape as a personal preference; the location must be one
+ * the owner owns (verified server-side). */
+export const officeDefaultsInputSchema = z.object({
+  drink: drinkSpecSchema,
+  schedule: z.object({
+    days: z.array(weekdaySchema).min(1).max(7),
+    time: localTimeSchema,
+  }),
+  locationId: z.string().regex(/^[0-9a-f]{24}$/i, "expected an ObjectId"),
+});
+export type OfficeDefaultsInput = z.infer<typeof officeDefaultsInputSchema>;

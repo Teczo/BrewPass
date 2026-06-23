@@ -161,7 +161,9 @@ export async function ensureIndexes(): Promise<void> {
   await Promise.all([
     users.createIndex({ authSub: 1 }, { unique: true }),
     locations.createIndex({ userId: 1 }),
-    preferences.createIndex({ userId: 1 }, { unique: true }),
+    // Phase J.2 — one preference per (user, scope): a personal preference plus
+    // a separate office preference per corporate membership.
+    preferences.createIndex({ userId: 1, scope: 1 }, { unique: true }),
     subscriptions.createIndex({ userId: 1 }),
     subscriptions.createIndex({ stripeSubscriptionId: 1 }, { unique: true }),
     // Idempotency: one order per user per local date — the cron can never
