@@ -36,5 +36,16 @@ export const userSchema = baseDocumentSchema.extend({
   studentVerifiedAt: z.date().optional(),
   /** Opt-in for caffeine/sugar insights (Phase 10). */
   healthOptInAt: z.date().optional(),
+  /**
+   * Phase J.5 — standing rule for same-day personal/office overlap. A member
+   * may receive both a personal and an office coffee on one day (they bill to
+   * different cards, so it is not a conflict). This is the member's optional
+   * "remember my choice" so they are not asked on every overlap day:
+   * `skip_personal` = on office-coffee days, skip my personal coffee;
+   * `skip_office` = skip the office coffee instead. Unset/`keep_both` = keep
+   * both (the default — the "user does nothing daily" promise, rule #17). Never
+   * silently cancels either side beyond what this rule expresses.
+   */
+  overlapRule: z.enum(["keep_both", "skip_personal", "skip_office"]).optional(),
 });
 export type User = z.infer<typeof userSchema>;
