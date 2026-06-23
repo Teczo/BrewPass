@@ -47,3 +47,15 @@ export function canMemberSelectOffice(account: AutonomySettings): boolean {
 export function canMemberDecline(account: AutonomySettings): boolean {
   return resolveMemberCanDecline(account);
 }
+
+/**
+ * Phase J.4 — may the OWNER toggle want/skip on a member's behalf? Skipping an
+ * office coffee *is* declining it, so this rides the same company-level
+ * `memberCanDecline` gate (rule #18): when the company forbids declining,
+ * neither the member nor the owner-on-their-behalf may skip a day, and there is
+ * nothing to restore — so both directions are disabled together. Enforced
+ * server-side on the member-order route, never merely hidden in the UI.
+ */
+export function canOwnerToggleMemberWant(account: AutonomySettings): boolean {
+  return resolveMemberCanDecline(account);
+}
