@@ -8,6 +8,7 @@ import {
 } from "@/components/corporate-owner-dashboard";
 import { CreateCorporateAccount } from "@/components/corporate-panel";
 import { JoinCompanyPanel } from "@/components/join-company-panel";
+import { OfficePackPanel } from "@/components/office-pack-panel";
 import {
   corporateAccountsCollection,
   corporateJoinCodesCollection,
@@ -21,6 +22,7 @@ import {
 import { buildOwnerRoster, listMemberOffices } from "@/lib/corporate/roster";
 import { drinkOptionsFrom, loadActiveTaxonomy } from "@/lib/taxonomy";
 import { DEFAULT_DRINK_OPTIONS } from "@/lib/taxonomy-options";
+import { tomorrowLocalDate } from "@/lib/time";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
 // Session-dependent: must render per-request, never be statically prerendered.
@@ -125,13 +127,19 @@ export default async function CorporatePage({
       <JoinCompanyPanel offices={offices} />
 
       {ownerProps ? (
-        <CorporateOwnerDashboard
-          account={ownerProps.account}
-          locations={ownerProps.locations}
-          drinkOptions={ownerProps.drinkOptions ?? DEFAULT_DRINK_OPTIONS}
-          joinCodes={ownerProps.joinCodes}
-          roster={ownerProps.roster}
-        />
+        <>
+          <CorporateOwnerDashboard
+            account={ownerProps.account}
+            locations={ownerProps.locations}
+            drinkOptions={ownerProps.drinkOptions ?? DEFAULT_DRINK_OPTIONS}
+            joinCodes={ownerProps.joinCodes}
+            roster={ownerProps.roster}
+          />
+          <OfficePackPanel
+            defaultDate={tomorrowLocalDate(new Date())}
+            drinkOptions={ownerProps.drinkOptions ?? DEFAULT_DRINK_OPTIONS}
+          />
+        </>
       ) : (
         <CreateCorporateCta />
       )}

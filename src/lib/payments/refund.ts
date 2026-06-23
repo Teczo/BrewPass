@@ -25,7 +25,15 @@ export async function refundFailedDelivery(
   const order = await orders.findOne({ _id: orderId });
   if (!order || order.chargeStatus !== "charged" || !order.stripeChargeId) return;
 
-  const result = await refundOrderCoffee(order._id.toHexString(), order.stripeChargeId);
+  // Phase K.1: a pack-covered coffee shares one PaymentIntent with the rest of
+  // the pack, so refund only this slot's allocated share (its priceSen).
+  // Non-pack orders refund the whole intent (amount omitted).
+  const partialAmountSen = order.packCovered ? order.priceSen : undefined;
+  const result = await refundOrderCoffee(
+    order._id.toHexString(),
+    order.stripeChargeId,
+    partialAmountSen,
+  );
   if (!result.ok) {
     console.error(`Refund for failed delivery ${orderId.toHexString()} failed: ${result.reason}`);
     return;

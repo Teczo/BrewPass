@@ -26,6 +26,10 @@ import {
 } from "@/lib/order-engine/routing-data";
 import { chargeOrderCoffee } from "@/lib/payments/charge";
 import { resolveChargeCard } from "@/lib/payments/charge-card";
+import {
+  applyTimeWindowDiscountToOrder,
+  loadTimeWindowDiscountsByVendor,
+} from "@/lib/promotions/discounts";
 import { resolveCommissionBps } from "@/lib/payments/commission";
 import { splitOrderAmount } from "@/lib/payments/money";
 import { recordAcceptance } from "@/lib/quality-service";
@@ -63,14 +67,18 @@ export async function generateOrdersForDate(
     ordersCollection(),
   ]);
 
-  const [candidateSubs, routingCandidates, skippedUserIds] = await Promise.all([
-    subscriptions.find({ status: { $in: ["active", "trialing"] } }).toArray(),
-    loadRoutingCandidates(localDate),
-    // Phase D.5: days a user explicitly skipped in a confirmed monthly list
-    // must never get an auto-generated order. Days the list already filled
-    // are protected by the unique (userId, date) order index instead.
-    loadSkippedUserIdsForDate(localDate),
-  ]);
+  const [candidateSubs, routingCandidates, skippedUserIds, timeWindowDiscounts] = await Promise.all(
+    [
+      subscriptions.find({ status: { $in: ["active", "trialing"] } }).toArray(),
+      loadRoutingCandidates(localDate),
+      // Phase D.5: days a user explicitly skipped in a confirmed monthly list
+      // must never get an auto-generated order. Days the list already filled
+      // are protected by the unique (userId, date) order index instead.
+      loadSkippedUserIdsForDate(localDate),
+      // Phase K.2: vendor time-window discounts applied to the snapshotted price.
+      loadTimeWindowDiscountsByVendor(localDate),
+    ],
+  );
   // Mutated in place as orders are assigned, so per-vendor capacity holds
   // across the whole run.
   const candidateByVendor = new Map<string, RoutingCandidate>(
@@ -137,6 +145,13 @@ export async function generateOrdersForDate(
       localDate,
       now,
     });
+    // Phase K.2: apply any vendor time-window discount to the snapshotted price.
+    applyTimeWindowDiscountToOrder(
+      order,
+      timeWindowDiscounts.get(candidate.vendor._id.toHexString()) ?? [],
+      weekday,
+      preference!.schedule.time,
+    );
     try {
       await orders.insertOne(order);
       summary.generated += 1;

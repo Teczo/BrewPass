@@ -75,18 +75,29 @@ export async function chargeOrderCoffee(args: {
 }
 
 /**
- * Refund a coffee charge in full (Phase E) — used when delivery fails after
- * the user was charged, or on dispute. Idempotent via `refund_<orderId>`.
+ * Refund a coffee charge (Phase E) — used when delivery fails after the user
+ * was charged, or on dispute. Idempotent via `refund_<orderId>`.
+ *
+ * `amountSen` enables a PARTIAL refund (Phase K.1): a Vendor Pack is charged as
+ * one PaymentIntent shared by several assigned coffees, so a single coffee's
+ * delivery failure refunds only its allocated share against that shared intent.
+ * Omitted → a full refund (the normal per-order case). The per-order key means
+ * each pack slot's partial refund is recorded independently.
  */
 export async function refundOrderCoffee(
   orderId: string,
   paymentIntentId: string,
+  amountSen?: number,
 ): Promise<ChargeResult> {
   try {
     const stripe = getStripe();
     const refund = await withRetryOnce(() =>
       stripe.refunds.create(
-        { payment_intent: paymentIntentId, metadata: { orderId } },
+        {
+          payment_intent: paymentIntentId,
+          ...(amountSen !== undefined ? { amount: amountSen } : {}),
+          metadata: { orderId },
+        },
         { idempotencyKey: `refund_${orderId}` },
       ),
     );

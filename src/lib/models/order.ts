@@ -77,6 +77,31 @@ export const orderSchema = baseDocumentSchema.extend({
    * auto-routing; `reassigned` = re-routed after a vendor declined.
    */
   assignmentMethod: z.enum(["user_preferred", "ai_routed", "reassigned"]).optional(),
+  /**
+   * Phase K.1 — Vendor Pack linkage. Set on both the pack's assigned coffees
+   * and the overflow top-up orders bought alongside, so the day's office
+   * purchase can be reconstructed. `packCovered` marks an assigned coffee whose
+   * cost is covered by the pack's single company-card charge (rule #3): the
+   * per-order cutoff charge skips it, and a delivery failure refunds only its
+   * allocated share. `vendorPinned` opts the order out of taxonomy reroute
+   * (rule #20) — a Pack is that vendor's priced product and never re-routes.
+   */
+  packPurchaseId: objectIdSchema.optional(),
+  packCovered: z.boolean().optional(),
+  vendorPinned: z.boolean().optional(),
+  /**
+   * Phase K.2 — a time-window discount applied to this individual coffee at
+   * generation. `priceSen` is already the discounted gross (the vendor absorbs
+   * the discount; commission/payout follow the lower gross). Snapshotted for
+   * transparency (rule #6); never re-read the live promo after generation.
+   */
+  appliedPromotion: z
+    .object({
+      vendorPromotionId: objectIdSchema,
+      discountPct: z.number().int().min(1).max(100),
+      originalPriceSen: moneySenSchema,
+    })
+    .optional(),
   /** Vendors that declined this order — excluded from re-routing so a
    * decline can't bounce back to the same vendor. */
   declinedVendorIds: z.array(objectIdSchema).optional(),

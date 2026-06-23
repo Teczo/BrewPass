@@ -14,12 +14,14 @@ import type {
   Preference,
   PreferenceSignal,
   Rating,
+  PackPurchase,
   Subscription,
   User,
   Vendor,
   VendorMenuDraft,
   VendorMenuItem,
   VendorPayout,
+  VendorPromotion,
   WebhookDelivery,
   WebhookEvent,
   WebhookSubscription,
@@ -83,6 +85,14 @@ export async function deliveriesCollection(): Promise<Collection<Delivery>> {
   return (await getDb()).collection<Delivery>("deliveries");
 }
 
+export async function vendorPromotionsCollection(): Promise<Collection<VendorPromotion>> {
+  return (await getDb()).collection<VendorPromotion>("vendorPromotions");
+}
+
+export async function packPurchasesCollection(): Promise<Collection<PackPurchase>> {
+  return (await getDb()).collection<PackPurchase>("packPurchases");
+}
+
 export async function corporateAccountsCollection(): Promise<Collection<CorporateAccount>> {
   return (await getDb()).collection<CorporateAccount>("corporateAccounts");
 }
@@ -136,6 +146,8 @@ export async function ensureIndexes(): Promise<void> {
     webhookDeliveries,
     corporateMemberships,
     corporateJoinCodes,
+    vendorPromotions,
+    packPurchases,
   ] = await Promise.all([
     usersCollection(),
     locationsCollection(),
@@ -156,6 +168,8 @@ export async function ensureIndexes(): Promise<void> {
     webhookDeliveriesCollection(),
     corporateMembershipsCollection(),
     corporateJoinCodesCollection(),
+    vendorPromotionsCollection(),
+    packPurchasesCollection(),
   ]);
 
   await Promise.all([
@@ -300,6 +314,22 @@ export async function ensureIndexes(): Promise<void> {
     corporateJoinCodes.createIndex({ code: 1 }, { unique: true }),
     corporateJoinCodes.createIndex({ corporateAccountId: 1 }),
     corporateJoinCodes.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    // Phase K.1 — vendor promotions. The portal lists a vendor's promos; the
+    // admin discovers active ones (status + validity window).
+    vendorPromotions.createIndex({ vendorId: 1 }),
+    vendorPromotions.createIndex({ status: 1, type: 1, validFrom: 1, validUntil: 1 }),
+    vendorPromotions.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    // Phase K.1 — pack purchases. At most one per (company, date); buying upserts
+    // on this key. Generation/cutoff look up a date's purchases.
+    packPurchases.createIndex({ corporateAccountId: 1, date: 1 }, { unique: true }),
+    packPurchases.createIndex({ status: 1, date: 1 }),
+    packPurchases.createIndex(
       { externalId: 1 },
       { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
     ),
