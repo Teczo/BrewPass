@@ -64,6 +64,25 @@ export function resolvePackCommissionBps(
   return effectiveCommissionBps(vendorOrPlatformBps, promoOverrideBps);
 }
 
+/**
+ * The number of coffees a pack-style promotion delivers. A `pack` states it
+ * directly; a `buy_n_get_m` bundle delivers buyQty + freeQty for the price of
+ * buyQty (K.2). Both materialize into the same PackPurchase flow.
+ */
+export function effectivePackSize(promo: {
+  type: string;
+  packSize?: number | null;
+  buyQty?: number | null;
+  freeQty?: number | null;
+}): number | null {
+  if (promo.type === "pack") return promo.packSize ?? null;
+  if (promo.type === "buy_n_get_m") {
+    if (promo.buyQty == null || promo.freeQty == null) return null;
+    return promo.buyQty + promo.freeQty;
+  }
+  return null;
+}
+
 export type AssignmentRefusal = "exceeds_pack_size" | "no_assignments";
 
 /** Are these assignment counts valid for the pack? At least one coffee, and

@@ -1,6 +1,8 @@
 import type { PackPurchase, VendorPromotion } from "@/lib/models";
+import { effectivePackSize } from "@/lib/promotions/pack-math";
 
-/** API-boundary shape for a vendor promotion (uses externalId, never _id). */
+/** API-boundary shape for a vendor promotion (uses externalId, never _id).
+ * `effectivePackSize` is the coffees a pack/bundle delivers (K.2). */
 export function vendorPromotionToJson(promo: VendorPromotion) {
   return {
     id: promo._id.toHexString(),
@@ -15,6 +17,15 @@ export function vendorPromotionToJson(promo: VendorPromotion) {
     packPriceSen: promo.packPriceSen ?? null,
     packMode: promo.packMode ?? null,
     fixedDrink: promo.fixedDrink ?? null,
+    effectivePackSize: effectivePackSize(promo),
+    // buy_n_get_m
+    buyQty: promo.buyQty ?? null,
+    freeQty: promo.freeQty ?? null,
+    // time_window_discount
+    discountPct: promo.discountPct ?? null,
+    windowStart: promo.windowStart ?? null,
+    windowEnd: promo.windowEnd ?? null,
+    applicableDays: promo.applicableDays ?? null,
   };
 }
 

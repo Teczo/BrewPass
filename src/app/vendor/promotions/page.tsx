@@ -31,7 +31,7 @@ export default async function VendorPromotionsPage() {
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Vendor Packs</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Promotions</h1>
           <p className="text-sm text-neutral-500">{context.vendor.businessName}</p>
         </div>
         <Link href="/vendor" className="text-sm text-amber-800 hover:underline">
@@ -39,9 +39,9 @@ export default async function VendorPromotionsPage() {
         </Link>
       </header>
       <p className="text-sm text-neutral-500">
-        Offer a discounted multi-coffee pack offices can buy for their team. Set a price for the
-        whole pack and a validity window. Packs are pinned to you — they don&apos;t switch to
-        another vendor.
+        Run time-boxed campaigns: discounted <strong>packs</strong> and <strong>buy-N-get-M</strong>{" "}
+        bundles offices buy for their team (pinned to you — they don&apos;t switch vendors), and{" "}
+        <strong>time-window discounts</strong> that automatically cut prices during quiet hours.
       </p>
       <VendorPackManager
         promotions={docs.map(vendorPromotionToJson)}

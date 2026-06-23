@@ -17,10 +17,14 @@ import {
   type CorporateMembership,
   type DrinkSpec,
   type PackAssignment,
+  type PackMode,
   type PackPurchase,
-  type VendorPromotion,
 } from "@/lib/models";
-import { isPromotionActiveOn, validateAssignmentCount } from "@/lib/promotions/pack-math";
+import {
+  effectivePackSize,
+  isPromotionActiveOn,
+  validateAssignmentCount,
+} from "@/lib/promotions/pack-math";
 import { packPurchaseToJson, vendorPromotionToJson } from "@/lib/promotions/serialize";
 import { findUncoveredDrinkField, loadDrinkValueSets } from "@/lib/taxonomy";
 import { cutoffInstantFor, localDateOf } from "@/lib/time";
@@ -79,19 +83,19 @@ type ResolvedCoverage =
  * map onto the taxonomy. fixed_drink packs force the pack's drink (rule #6).
  */
 async function resolveCoverage(
-  promo: Pick<VendorPromotion, "packSize" | "packMode" | "fixedDrink">,
+  pack: { packSize: number; packMode: PackMode; fixedDrink?: DrinkSpec },
   members: Map<string, CorporateMembership>,
   assignmentsInput: z.infer<typeof assignmentInputSchema>[],
   topUpInput: string[],
 ): Promise<ResolvedCoverage> {
-  const countCheck = validateAssignmentCount(promo.packSize!, assignmentsInput.length);
+  const countCheck = validateAssignmentCount(pack.packSize, assignmentsInput.length);
   if (!countCheck.ok) {
     return {
       ok: false,
       status: 422,
       error:
         countCheck.reason === "exceeds_pack_size"
-          ? `This pack covers ${promo.packSize} coffees — assign at most that many.`
+          ? `This pack covers ${pack.packSize} coffees — assign at most that many.`
           : "Assign at least one member to the pack.",
     };
   }
@@ -111,8 +115,8 @@ async function resolveCoverage(
     assignedIds.add(input.corporateMembershipId);
 
     let drink: DrinkSpec;
-    if (promo.packMode === "fixed_drink") {
-      drink = promo.fixedDrink!; // forced (rule #6)
+    if (pack.packMode === "fixed_drink") {
+      drink = pack.fixedDrink!; // forced (rule #6)
     } else {
       if (!input.drinkSpec) {
         return { ok: false, status: 422, error: "Pick a drink for each member in this pack." };
@@ -165,10 +169,19 @@ export async function GET(request: Request) {
     usersCollection(),
   ]);
 
-  const [activePromos, currentPurchase, memberDocs] = await Promise.all([
+  const [activePromos, windowPromos, currentPurchase, memberDocs] = await Promise.all([
     promosCol
       .find({
-        type: "pack",
+        type: { $in: ["pack", "buy_n_get_m"] },
+        status: "active",
+        validFrom: { $lte: targetDate },
+        validUntil: { $gte: targetDate },
+      })
+      .toArray(),
+    // K.2: time-window discounts apply automatically; surface them as nudges.
+    promosCol
+      .find({
+        type: "time_window_discount",
         status: "active",
         validFrom: { $lte: targetDate },
         validUntil: { $gte: targetDate },
@@ -179,9 +192,11 @@ export async function GET(request: Request) {
   ]);
 
   const vendorById = new Map(
-    (await vendorsCol.find({ _id: { $in: activePromos.map((p) => p.vendorId) } }).toArray()).map(
-      (v) => [v._id.toHexString(), v],
-    ),
+    (
+      await vendorsCol
+        .find({ _id: { $in: [...activePromos, ...windowPromos].map((p) => p.vendorId) } })
+        .toArray()
+    ).map((v) => [v._id.toHexString(), v]),
   );
   const userById = new Map(
     (await usersCol.find({ _id: { $in: memberDocs.map((m) => m.userId) } }).toArray()).map((u) => [
@@ -201,6 +216,13 @@ export async function GET(request: Request) {
     availablePacks: activePromos.map((p) => ({
       ...vendorPromotionToJson(p),
       vendorName: vendorById.get(p.vendorId.toHexString())?.businessName ?? "Vendor",
+    })),
+    windowDiscounts: windowPromos.map((p) => ({
+      id: p._id.toHexString(),
+      vendorName: vendorById.get(p.vendorId.toHexString())?.businessName ?? "Vendor",
+      discountPct: p.discountPct ?? null,
+      windowStart: p.windowStart ?? null,
+      windowEnd: p.windowEnd ?? null,
     })),
     currentPurchase: currentPurchase ? packPurchaseToJson(currentPurchase) : null,
   });
@@ -235,15 +257,24 @@ export async function POST(request: Request) {
   }
 
   const promos = await vendorPromotionsCollection();
-  const promo = await promos.findOne({ _id: new ObjectId(input.vendorPromotionId), type: "pack" });
+  const promo = await promos.findOne({
+    _id: new ObjectId(input.vendorPromotionId),
+    type: { $in: ["pack", "buy_n_get_m"] },
+  });
   if (!promo) return NextResponse.json({ error: "Pack not found" }, { status: 404 });
   if (!isPromotionActiveOn(promo, input.date)) {
     return NextResponse.json({ error: "That pack isn't available on that day." }, { status: 422 });
   }
 
+  // A pack states its size; a buy_n_get_m bundle delivers buyQty + freeQty.
+  const packSize = effectivePackSize(promo);
+  if (packSize == null || promo.packPriceSen == null || promo.packMode == null) {
+    return NextResponse.json({ error: "This pack is misconfigured." }, { status: 422 });
+  }
+
   const members = await activeMembershipMap(account._id);
   const coverage = await resolveCoverage(
-    promo,
+    { packSize, packMode: promo.packMode, fixedDrink: promo.fixedDrink },
     members,
     input.assignments,
     input.topUpMembershipIds,
@@ -259,9 +290,9 @@ export async function POST(request: Request) {
     date: input.date,
     packSnapshot: {
       vendorId: promo.vendorId,
-      packSize: promo.packSize!,
-      packPriceSen: promo.packPriceSen!,
-      packMode: promo.packMode!,
+      packSize,
+      packPriceSen: promo.packPriceSen,
+      packMode: promo.packMode,
       ...(promo.fixedDrink ? { fixedDrink: promo.fixedDrink } : {}),
       ...(promo.commissionRateOverrideBps !== undefined
         ? { commissionRateOverrideBps: promo.commissionRateOverrideBps }

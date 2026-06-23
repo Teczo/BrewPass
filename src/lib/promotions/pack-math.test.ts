@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   allocatePackAmounts,
   distributeEvenly,
+  effectivePackSize,
   isPromotionActiveOn,
   resolvePackCommissionBps,
   validateAssignmentCount,
@@ -76,6 +77,15 @@ describe("validateAssignmentCount", () => {
     expect(validateAssignmentCount(10, 1)).toEqual({ ok: true });
     expect(validateAssignmentCount(10, 10)).toEqual({ ok: true });
     expect(validateAssignmentCount(10, 11)).toEqual({ ok: false, reason: "exceeds_pack_size" });
+  });
+});
+
+describe("effectivePackSize (K.2 — bundles reuse the pack flow)", () => {
+  it("uses packSize for a pack and buyQty+freeQty for a bundle", () => {
+    expect(effectivePackSize({ type: "pack", packSize: 10 })).toBe(10);
+    expect(effectivePackSize({ type: "buy_n_get_m", buyQty: 4, freeQty: 1 })).toBe(5);
+    expect(effectivePackSize({ type: "buy_n_get_m", buyQty: 4 })).toBeNull();
+    expect(effectivePackSize({ type: "time_window_discount" })).toBeNull();
   });
 });
 

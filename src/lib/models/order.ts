@@ -89,6 +89,19 @@ export const orderSchema = baseDocumentSchema.extend({
   packPurchaseId: objectIdSchema.optional(),
   packCovered: z.boolean().optional(),
   vendorPinned: z.boolean().optional(),
+  /**
+   * Phase K.2 — a time-window discount applied to this individual coffee at
+   * generation. `priceSen` is already the discounted gross (the vendor absorbs
+   * the discount; commission/payout follow the lower gross). Snapshotted for
+   * transparency (rule #6); never re-read the live promo after generation.
+   */
+  appliedPromotion: z
+    .object({
+      vendorPromotionId: objectIdSchema,
+      discountPct: z.number().int().min(1).max(100),
+      originalPriceSen: moneySenSchema,
+    })
+    .optional(),
   /** Vendors that declined this order — excluded from re-routing so a
    * decline can't bounce back to the same vendor. */
   declinedVendorIds: z.array(objectIdSchema).optional(),

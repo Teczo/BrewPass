@@ -16,6 +16,10 @@ import {
   type RoutingCandidate,
 } from "@/lib/order-engine/routing-data";
 import {
+  applyTimeWindowDiscountToOrder,
+  loadTimeWindowDiscountsByVendor,
+} from "@/lib/promotions/discounts";
+import {
   loadPackCoverageByCompany,
   memberGenerationDecision,
 } from "@/lib/promotions/pack-coverage";
@@ -50,17 +54,26 @@ export async function generateOfficeOrdersForDate(
   localDate: string,
   now: Date = new Date(),
 ): Promise<OfficeGenerationSummary> {
-  const [memberships, accounts, locations, orders, routingCandidates, packCoverage] =
-    await Promise.all([
-      corporateMembershipsCollection(),
-      corporateAccountsCollection(),
-      locationsCollection(),
-      ordersCollection(),
-      loadRoutingCandidates(localDate),
-      // Phase K.1: companies with a Vendor Pack that day drive coverage via the
-      // pack flow, not normal per-member generation.
-      loadPackCoverageByCompany(localDate),
-    ]);
+  const [
+    memberships,
+    accounts,
+    locations,
+    orders,
+    routingCandidates,
+    packCoverage,
+    timeWindowDiscounts,
+  ] = await Promise.all([
+    corporateMembershipsCollection(),
+    corporateAccountsCollection(),
+    locationsCollection(),
+    ordersCollection(),
+    loadRoutingCandidates(localDate),
+    // Phase K.1: companies with a Vendor Pack that day drive coverage via the
+    // pack flow, not normal per-member generation.
+    loadPackCoverageByCompany(localDate),
+    // Phase K.2: vendor time-window discounts applied to office coffees too.
+    loadTimeWindowDiscountsByVendor(localDate),
+  ]);
 
   const candidateByVendor = new Map<string, RoutingCandidate>(
     routingCandidates.map((candidate) => [candidate.vendor._id.toHexString(), candidate]),
@@ -160,6 +173,14 @@ export async function generateOfficeOrdersForDate(
       localDate,
       now,
     });
+    // Phase K.2: individual office coffees get the vendor's time-window discount
+    // too (pack-covered coffees are created at cutoff and never reach here).
+    applyTimeWindowDiscountToOrder(
+      order,
+      timeWindowDiscounts.get(candidate.vendor._id.toHexString()) ?? [],
+      weekday,
+      officePref.schedule.time,
+    );
 
     try {
       await orders.insertOne(order);

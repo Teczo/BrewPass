@@ -11,12 +11,22 @@ interface MemberJson {
 }
 interface AvailablePackJson {
   id: string;
+  type: "pack" | "buy_n_get_m" | "time_window_discount";
   name: string;
   vendorName: string;
-  packSize: number | null;
+  effectivePackSize: number | null;
   packPriceSen: number | null;
   packMode: "fixed_drink" | "buyer_choice" | null;
   fixedDrink: { drink: string } | null;
+  buyQty: number | null;
+  freeQty: number | null;
+}
+interface WindowDiscountJson {
+  id: string;
+  vendorName: string;
+  discountPct: number | null;
+  windowStart: string | null;
+  windowEnd: string | null;
 }
 interface CurrentPurchaseJson {
   status: string;
@@ -29,6 +39,7 @@ interface PacksResponse {
   cardOnFile: boolean;
   members: MemberJson[];
   availablePacks: AvailablePackJson[];
+  windowDiscounts: WindowDiscountJson[];
   currentPurchase: CurrentPurchaseJson | null;
 }
 
@@ -123,9 +134,9 @@ export function OfficePackPanel({
   }
 
   function buy() {
-    if (!selectedPack || selectedPack.packSize == null) return;
+    if (!selectedPack || selectedPack.effectivePackSize == null) return;
     const ids = [...selectedMembers];
-    const packSize = selectedPack.packSize;
+    const packSize = selectedPack.effectivePackSize;
     const assignedIds = ids.slice(0, packSize);
     const topUpIds = ids.slice(packSize);
     const drinkSpec =
@@ -164,6 +175,16 @@ export function OfficePackPanel({
         <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">
           Add a company card above to buy a pack.
         </p>
+      )}
+
+      {data && data.windowDiscounts.length > 0 && (
+        <div className="rounded-md border border-green-200 bg-green-50 p-2 text-xs text-green-800">
+          <span className="font-medium">Happy hours:</span>{" "}
+          {data.windowDiscounts
+            .map((w) => `${w.vendorName} ${w.discountPct}% off ${w.windowStart}–${w.windowEnd}`)
+            .join(" · ")}{" "}
+          — applied automatically to coffees delivered in those windows.
+        </div>
       )}
 
       {data?.currentPurchase ? (
@@ -213,7 +234,10 @@ export function OfficePackPanel({
                     />
                     <span className="font-medium">{p.name}</span> · {p.vendorName}
                     <span className="block pl-6 text-xs text-neutral-500">
-                      {p.packSize}× for {p.packPriceSen != null ? fmt(p.packPriceSen) : "—"} ·{" "}
+                      {p.type === "buy_n_get_m"
+                        ? `buy ${p.buyQty} get ${p.freeQty} free (${p.effectivePackSize}×)`
+                        : `${p.effectivePackSize}×`}{" "}
+                      for {p.packPriceSen != null ? fmt(p.packPriceSen) : "—"} ·{" "}
                       {p.packMode === "fixed_drink"
                         ? `fixed ${p.fixedDrink?.drink ?? "drink"}`
                         : "buyer's choice"}
@@ -242,8 +266,8 @@ export function OfficePackPanel({
                   </label>
                 )}
                 <p className="text-xs text-neutral-500">
-                  Pick members. The first {selectedPack.packSize} fill the pack; anyone beyond that
-                  is added as a normally-routed top-up coffee.
+                  Pick members. The first {selectedPack.effectivePackSize} fill the pack; anyone
+                  beyond that is added as a normally-routed top-up coffee.
                 </p>
                 <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto">
                   {data.members.map((m) => (
@@ -263,8 +287,9 @@ export function OfficePackPanel({
                   )}
                 </ul>
                 <p className="text-xs text-neutral-500">
-                  {Math.min(selectedMembers.size, selectedPack.packSize ?? 0)} in pack ·{" "}
-                  {Math.max(0, selectedMembers.size - (selectedPack.packSize ?? 0))} top-ups
+                  {Math.min(selectedMembers.size, selectedPack.effectivePackSize ?? 0)} in pack ·{" "}
+                  {Math.max(0, selectedMembers.size - (selectedPack.effectivePackSize ?? 0))}{" "}
+                  top-ups
                 </p>
                 <button
                   type="button"
