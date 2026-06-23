@@ -42,6 +42,7 @@ export const PHASE_I_COLLECTIONS = [
   "vendorMenuDrafts",
   "deliveries",
   "corporateAccounts",
+  "corporateMemberships",
   "preferenceSignals",
 ] as const;
 

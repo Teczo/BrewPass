@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import type {
   CommissionConfig,
   CorporateAccount,
+  CorporateMembership,
   Delivery,
   Location,
   OptionTaxonomy,
@@ -85,6 +86,10 @@ export async function corporateAccountsCollection(): Promise<Collection<Corporat
   return (await getDb()).collection<CorporateAccount>("corporateAccounts");
 }
 
+export async function corporateMembershipsCollection(): Promise<Collection<CorporateMembership>> {
+  return (await getDb()).collection<CorporateMembership>("corporateMemberships");
+}
+
 export async function preferenceSignalsCollection(): Promise<Collection<PreferenceSignal>> {
   return (await getDb()).collection<PreferenceSignal>("preferenceSignals");
 }
@@ -124,6 +129,7 @@ export async function ensureIndexes(): Promise<void> {
     webhooks,
     webhookSubscriptions,
     webhookDeliveries,
+    corporateMemberships,
   ] = await Promise.all([
     usersCollection(),
     locationsCollection(),
@@ -142,6 +148,7 @@ export async function ensureIndexes(): Promise<void> {
     webhookEventsCollection(),
     webhookSubscriptionsCollection(),
     webhookDeliveriesCollection(),
+    corporateMembershipsCollection(),
   ]);
 
   await Promise.all([
@@ -264,6 +271,17 @@ export async function ensureIndexes(): Promise<void> {
       { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
     ),
     webhookSubscriptions.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    // Phase J.0 — corporate membership is the source of truth for "user X
+    // belongs to company Y". One membership per (account, user); the migration
+    // and the member-add flow upsert on this key (idempotent).
+    corporateMemberships.createIndex({ corporateAccountId: 1, userId: 1 }, { unique: true }),
+    // Resolve every company a given user belongs to (a user may hold more than
+    // one membership across companies, plus their untouched personal account).
+    corporateMemberships.createIndex({ userId: 1 }),
+    corporateMemberships.createIndex(
       { externalId: 1 },
       { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
     ),

@@ -6,7 +6,12 @@ import {
   cancelCorporateMemberSubscription,
   upsertCorporateMemberSubscription,
 } from "@/lib/billing";
-import { corporateAccountsCollection, usersCollection } from "@/lib/collections";
+import {
+  corporateAccountsCollection,
+  corporateMembershipsCollection,
+  usersCollection,
+} from "@/lib/collections";
+import { newDocumentMeta } from "@/lib/models/shared";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
 export const runtime = "nodejs";
@@ -69,9 +74,27 @@ export async function POST(request: Request) {
     );
   }
 
-  if (member.role === "individual" || member.role === "student") {
-    await users.updateOne({ _id: member._id }, { $set: { role: "corporate", updatedAt: now } });
-  }
+  // Phase J.0: membership is a relationship, NOT a role mutation. The member's
+  // personal role, subscription, and preferences are left fully intact
+  // (critical rule #16). Record the membership as the source of truth, keyed
+  // (account, user) so a re-add is idempotent and a re-join flips a previously
+  // `removed` row back to `active`.
+  const memberships = await corporateMembershipsCollection();
+  await memberships.updateOne(
+    { corporateAccountId: account._id, userId: member._id },
+    {
+      $set: { status: "active", joinedVia: "email", joinedAt: now, updatedAt: now },
+      $setOnInsert: {
+        ...newDocumentMeta(),
+        corporateAccountId: account._id,
+        userId: member._id,
+        createdAt: now,
+      },
+      $unset: { removedAt: "" },
+    },
+    { upsert: true },
+  );
+
   // If the company subscription is live, the member starts immediately.
   await upsertCorporateMemberSubscription(updated, member._id, now);
 
@@ -97,6 +120,13 @@ export async function DELETE(request: Request) {
   await accounts.updateOne(
     { _id: account._id },
     { $pull: { memberUserIds: memberId }, $set: { updatedAt: now } },
+  );
+  // Phase J.0: mark the membership `removed` rather than deleting it (keeps an
+  // audit trail) and never touch the member's personal role/subscription.
+  const memberships = await corporateMembershipsCollection();
+  await memberships.updateOne(
+    { corporateAccountId: account._id, userId: memberId },
+    { $set: { status: "removed", removedAt: now, updatedAt: now } },
   );
   await cancelCorporateMemberSubscription(account._id, memberId, now);
 
