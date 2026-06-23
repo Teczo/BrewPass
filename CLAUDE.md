@@ -76,6 +76,10 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 - **Rating** — orderId, userId, vendorId, score, comment → aggregates into Vendor.ratingScore.
 - **MonthlyList** — userId, period (month), status (`proposed` | `confirmed`), generationMethod (`ai` | `manual`), array of planned daily entries (date → taxonomy drink spec + assigned vendorId). The confirmed list is the source from which scheduled daily Orders are created.
 
+**Corporate team entities (Phase J — added)**
+- **CorporateMembership** — corporateAccountId, userId, status (`invited` | `active` | `removed`), `officePreferenceId` (the member's office-scope Preference), seat subscription key, `joinedVia` (`code` | `invite` | `email`), invitedAt / joinedAt / removedAt. **The source of truth for "user X occupies a seat in company Y," replacing the raw `memberUserIds` array** (migrated). Holds per-member office state and never touches the member's personal account.
+- **CorporateJoinCode** — code, corporateAccountId, type (`reusable` | `single_use`), redemptionCap (≤ seatCount), redeemedCount / redeemedBy, active, rotatedAt. Lets staff self-join without the owner managing emails.
+
 **Modified entities (scope to vendor)**
 - **Order** — add `vendorId`, `monthlyListId`, `assignmentMethod` (`user_preferred` | `ai_routed` | `reassigned`), accept/reject status + window, `commissionAmount`, `vendorNetAmount`, `chargeStatus`, `payoutStatus`, `stripeChargeId`, `stripeTransferId`. Drink spec references taxonomy. State machine: `scheduled → confirmed(charged) → preparing → out_for_delivery → delivered(payout released)` / `failed(refunded)` / `skipped(not charged)`.
 - **Preference** — drink/size/milk/etc. reference **OptionTaxonomy**, not hardcoded values. Add `preferredVendorId` (nullable) + `vendorSelectionMethod` (`manual` | `ai`).
@@ -85,6 +89,12 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 **Schema reservations (Phase I — added)**
 - **`externalId`** — every persistent entity carries a stable external UUID generated on create, distinct from `_id`. Used at the API boundary for stable identity and future export/reconciliation. Backfill existing records in a tested, reversible migration (see Phase I).
 - **`tenantId`** — every persistent entity carries a `tenantId`, defaulted to a single constant. Reserved only; no multi-tenant behavior is built yet.
+
+**Corporate team accounts (Phase J — added; coexists with personal accounts)**
+- **CorporateAccount** — add `selectionMode` (`bundle` | `individual`), `memberSelfSelect` (bool), `memberCanDecline` (bool), `bundleDrink` (taxonomy spec, used when `selectionMode = bundle`), `officeDefaults` (location/schedule applied to office coffee), `joinCode`. *(Proposed defaults: `individual` / self-select on / decline on — these are business decisions; confirm before locking, per critical rule #11.)* The `memberUserIds` array is superseded by `CorporateMembership`.
+- **Preference** — key per (`userId`, `scope`) where `scope` is `personal` or a `corporateMembershipId`, so a member holds a personal preference **and** a separate office preference. Changes the existing unique `{ userId }` index → `{ userId, scope }` (tested, reversible migration — Phase A discipline).
+- **Order** — add `source` (`personal` | `corporate`) and `corporateMembershipId` (corporate orders only). Unique index moves `(userId, date)` → `(userId, date, source)`, so a member can hold a personal order and an office order on the same day. State machine, charging, and payout are otherwise unchanged — personal coffee charges the member's card, office coffee draws the seat; never cross-charged.
+- **User** — joining/leaving a company **no longer mutates `role`**. The personal role, subscription, and preferences are untouched; membership lives entirely in `CorporateMembership`.
 
 **Migration note:** Phase A is where v1 and v2 data diverge. Write it as a clean, tested, reversible migration. After it runs, there is no separate "v1 data" — there is one app with Vendor #1.
 
@@ -199,6 +209,19 @@ Run only after the platform is stable (A–H). Build in **small, short-lived fea
 - **I.5 — Outbound webhooks.** Emit signed lifecycle events (`order.scheduled`, `vendor.assigned`, `order.confirmed`, `order.delivered`, `order.failed`, `payout.released`, `refund.issued`, etc.) to registered subscribers. Best-effort and non-blocking — emission failure never blocks or alters a core order/charge/payout action, exactly like notifications. Idempotent delivery with retries.
 - **Deliverable:** the same product, now with a clean service layer, a versioned API, stable external IDs, a reserved tenant field, and outbound events — all additive, no frontend feature change, fully covered by tests proving behavior is unchanged.
 
+### Phase J — Corporate Team Accounts: Self-Management & Personal/Office Coexistence
+**Goal:** turn the existing corporate feature (one billing owner, per-seat subscription, members added by email) into a real team product: staff manage their own office coffee, the owner controls how much autonomy they get, members join with a simple code, and — critically — **a staff member's personal BrewPass account and their office seat coexist without either ever overriding the other.** Additive and migration-safe, same discipline as Phase A. Builds on the existing `CorporateAccount` + per-seat subscription; does not rewrite them.
+
+- **J.0 — Decouple membership from `role` (the non-conflict foundation).** Today, adding a member rewrites their `role` `individual`/`student` → `corporate`, erasing their personal identity. Stop this. **Corporate membership becomes a relationship (`CorporateMembership`), not a role mutation.** A user keeps their personal role, personal subscription, and personal preferences fully intact while also holding a seat in one (or more) companies. Migrate the existing `memberUserIds` array into `CorporateMembership` rows.
+- **J.1 — Join by code (no email management).** The owner generates a **join code** for the company (rotatable; redemptions capped at `seatCount`), with optional single-use invite codes for tighter control. A staff member redeems the code from their app: if they already have a BrewPass account they **link it** (their personal coffee stays exactly as-is); if not, they sign up, then link. No owner-side email entry, no requirement that the owner knows the member's login. Redeeming creates a `CorporateMembership` (`active`) + the per-seat subscription, exactly as today's email path does.
+- **J.2 — Separate office preference.** Each membership carries its **own office preference** (drink/schedule/location), independent of the member's personal preference, defaulting to the owner's `officeDefaults`. Personal coffee is never touched. (Requires the per-(user, scope) preference key from the data-model change above.)
+- **J.3 — Owner autonomy controls (server-enforced).** Per company, the owner sets: **selection mode** `bundle` (owner picks one office coffee for everyone) vs `individual` (each member picks their own); **`memberSelfSelect`** on/off (may members choose/edit their office coffee at all); **`memberCanDecline`** on/off (may members skip — "don't want today"). All three are enforced **server-side on every member order mutation**, not merely hidden in the UI.
+- **J.4 — Owner visibility & control.** The owner sees, per member: joined or not, whether they've set their office coffee, today's/tomorrow's selection, want vs skip, and delivery status. The owner can set the bundle coffee and — where `memberSelfSelect` / `memberCanDecline` allow — toggle want/skip on a member's behalf.
+- **J.5 — Personal/office coexistence & same-day reconciliation (critical).** A staff member may receive **both** a personal coffee and an office coffee, even on the same day — orders are unique per **(userId, date, source)**, not (userId, date). Charging stays correct: personal coffee on the member's card, office coffee against the seat, never cross-charged. **Same-day conflict prompt:** when generation would produce both a personal and an office order for one day, notify the member **before that day's cutoff** to choose **keep both**, **cancel one**, or **cancel both**. Until they choose (or cutoff passes) the safe default is **keep both** — no coffee silently disappears, and neither account ever silently cancels the other. This prompt is the *only* place the two accounts interact.
+- **J.6 — Lightweight member tracking.** Members get coffee details + ETA + status for their office coffee; the live map is available but optional (a compact "arriving ~9:05 · Flat White · Level 12" view suffices for staff who don't want the map).
+- **Build with tests** for J.0 (membership ≠ role), J.3 (server-side autonomy enforcement), and J.5 (per-source idempotency + the same-day prompt) before shipping.
+- **Deliverable:** staff self-manage office coffee under owner-set autonomy rules, join by code, keep their personal account fully intact alongside an office seat, and resolve any same-day overlap by explicit choice — no account ever overrides the other.
+
 ---
 
 ## Critical Rules for Claude Code
@@ -218,11 +241,14 @@ Run only after the platform is stable (A–H). Build in **small, short-lived fea
 13. **Phase I work is additive and behavior-preserving.** The service-extraction refactor must not change any user-facing behavior; the `/v1` API and webhooks are layered on top and must never degrade or remove an existing frontend feature. If a Phase I change would alter behavior, stop and confirm with me first.
 14. **`externalId` and `tenantId` are schema reservations.** Always generate `externalId` on create and expose it (not `_id`) at the API boundary. Always set `tenantId` to the default constant, but **do not build any multi-tenant logic** until a future phase explicitly calls for it.
 15. **Don't over-build for a hypothetical integrator/acquirer.** Build only what also improves the platform today (clean boundaries, stable IDs, a real API, events). No speculative acquirer-specific shims, adapters, or data-export pipelines until there's a concrete need.
+16. **Corporate membership never overrides a personal account.** Joining or leaving a company must not change a user's personal `role`, personal subscription, or personal preferences. Membership is a relationship (`CorporateMembership`), not a role mutation. One user can simultaneously be a personal subscriber and an office member, and the two must work together.
+17. **Personal and office coffee are distinct order sources.** Orders are unique per (userId, date, source), not (userId, date). Personal coffee charges the member's own card; office coffee draws the company seat — never cross-charge. When both fall on one day, prompt the member before cutoff (keep both / cancel one / cancel both); default to keep both, and never silently drop or merge the two.
+18. **Owner autonomy toggles are server-authoritative.** `selectionMode` (bundle/individual), `memberSelfSelect`, and `memberCanDecline` are enforced on the server for every member order action — not just shown/hidden in the UI. Bundle and owner-set selections still snapshot at generation (rule #6); members may edit only when self-select is enabled.
 
 ---
 
 ## Build Order Reminder
-A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G → H → **I (additive, last)**.
+A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G → H → **I (additive, last)** → **J (corporate team accounts — additive; coexists with personal accounts)**.
 D (routing) and E (charging/payouts) carry almost all the risk. If anything is shaky, it's there. D.5 (monthly list) is what makes "choose once a month" real and feeds scheduled orders into E. **I (service boundary + `/v1` API + webhooks + `externalId`/`tenantId` reservations) is additive and runs only once A–H are stable — it improves the backend without changing the frontend.**
 
 ---
