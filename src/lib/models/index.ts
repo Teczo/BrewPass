@@ -15,6 +15,7 @@ export * from "@/lib/models/vendor-menu-draft";
 export * from "@/lib/models/delivery";
 export * from "@/lib/models/corporate-account";
 export * from "@/lib/models/corporate-membership";
+export * from "@/lib/models/corporate-join-code";
 export * from "@/lib/models/preference-signal";
 export * from "@/lib/models/webhook-event";
 export * from "@/lib/models/webhook-subscription";

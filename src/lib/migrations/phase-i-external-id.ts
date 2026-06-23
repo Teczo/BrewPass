@@ -43,6 +43,7 @@ export const PHASE_I_COLLECTIONS = [
   "deliveries",
   "corporateAccounts",
   "corporateMemberships",
+  "corporateJoinCodes",
   "preferenceSignals",
 ] as const;
 
