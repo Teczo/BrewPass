@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   canMemberDecline,
   canMemberSelectOffice,
+  canOwnerToggleMemberWant,
   CORPORATE_AUTONOMY_DEFAULTS,
   resolveMemberCanDecline,
   resolveMemberSelfSelect,
@@ -39,15 +40,15 @@ describe("autonomy resolvers (unset reads as confirmed defaults)", () => {
 describe("canMemberSelectOffice", () => {
   it("allows editing in individual mode with self-select on (the default)", () => {
     expect(canMemberSelectOffice({})).toBe(true);
-    expect(
-      canMemberSelectOffice({ selectionMode: "individual", memberSelfSelect: true }),
-    ).toBe(true);
+    expect(canMemberSelectOffice({ selectionMode: "individual", memberSelfSelect: true })).toBe(
+      true,
+    );
   });
 
   it("forbids editing when self-select is off", () => {
-    expect(
-      canMemberSelectOffice({ selectionMode: "individual", memberSelfSelect: false }),
-    ).toBe(false);
+    expect(canMemberSelectOffice({ selectionMode: "individual", memberSelfSelect: false })).toBe(
+      false,
+    );
   });
 
   it("forbids editing in bundle mode even when self-select is on", () => {
@@ -59,5 +60,19 @@ describe("canMemberDecline", () => {
   it("follows the memberCanDecline toggle, defaulting on", () => {
     expect(canMemberDecline({})).toBe(true);
     expect(canMemberDecline({ memberCanDecline: false })).toBe(false);
+  });
+});
+
+describe("canOwnerToggleMemberWant (J.4 owner want/skip on behalf)", () => {
+  it("rides the same decline gate so it is on by default", () => {
+    expect(canOwnerToggleMemberWant({})).toBe(true);
+    expect(canOwnerToggleMemberWant({ memberCanDecline: true })).toBe(true);
+  });
+
+  it("is blocked when the company forbids declining, regardless of selection mode", () => {
+    expect(canOwnerToggleMemberWant({ memberCanDecline: false })).toBe(false);
+    expect(canOwnerToggleMemberWant({ selectionMode: "bundle", memberCanDecline: false })).toBe(
+      false,
+    );
   });
 });

@@ -176,6 +176,22 @@ export default async function DashboardPage() {
         </section>
       )}
 
+      <section className="flex items-center justify-between rounded-md border border-neutral-200 p-4">
+        <div>
+          <h2 className="font-semibold">Office coffee</h2>
+          <p className="text-sm text-neutral-500">
+            Join your company with a code, or run coffee for your team — separate from your personal
+            plan.
+          </p>
+        </div>
+        <Link
+          href="/dashboard/corporate"
+          className="shrink-0 text-sm text-amber-800 hover:underline"
+        >
+          Manage →
+        </Link>
+      </section>
+
       <HealthCard optedIn={Boolean(user.healthOptInAt)} summary={healthSummary} />
 
       <div className="grid gap-4 sm:grid-cols-2">
