@@ -25,6 +25,13 @@ export const corporateAccountSchema = baseDocumentSchema.extend({
   /** One Stripe subscription on the billing owner, quantity = seatCount. */
   stripeCustomerId: z.string().optional(),
   stripeSubscriptionId: z.string().optional(),
+  /**
+   * Phase J.7 — the saved company card every delivered office coffee is
+   * charged to (charge-then-deliver, rule #17). Validated via a SetupIntent;
+   * never charged upfront. A member's personal card is never used for office
+   * coffee and this card is never used for personal coffee.
+   */
+  companyStripePaymentMethodId: z.string().optional(),
   status: z.enum(["incomplete", "trialing", "active", "paused", "past_due", "canceled"]).optional(),
   currentPeriodStart: z.date().optional(),
   currentPeriodEnd: z.date().optional(),

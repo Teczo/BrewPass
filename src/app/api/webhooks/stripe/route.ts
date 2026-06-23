@@ -2,7 +2,11 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 
-import { activateCardOnFileMembership, syncSubscriptionFromStripe } from "@/lib/billing";
+import {
+  activateCardOnFileMembership,
+  saveCompanyCard,
+  syncSubscriptionFromStripe,
+} from "@/lib/billing";
 import { webhookEventsCollection } from "@/lib/collections";
 import { requireEnv } from "@/lib/env";
 import { applyAccountStatus } from "@/lib/payments/connect";
@@ -69,6 +73,48 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
   });
 }
 
+/** Persist the company card from a completed setup Checkout (Phase J.7).
+ * No-op for sessions that aren't company-card setups. */
+async function handleCompanyCardSetup(session: Stripe.Checkout.Session): Promise<void> {
+  if (session.mode !== "setup" || session.metadata?.kind !== "company_card_setup") return;
+
+  const accountIdRaw = session.metadata?.corporateAccountId;
+  if (!accountIdRaw || !ObjectId.isValid(accountIdRaw)) {
+    console.error(`checkout.session.completed ${session.id}: bad company-card metadata; skipping.`);
+    return;
+  }
+
+  const setupIntentId =
+    typeof session.setup_intent === "string" ? session.setup_intent : session.setup_intent?.id;
+  if (!setupIntentId) {
+    console.error(`checkout.session.completed ${session.id}: no setup_intent; skipping.`);
+    return;
+  }
+
+  const stripe = getStripe();
+  const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
+  const paymentMethodId =
+    typeof setupIntent.payment_method === "string"
+      ? setupIntent.payment_method
+      : setupIntent.payment_method?.id;
+  const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+  if (!paymentMethodId || !customerId) {
+    console.error(`checkout.session.completed ${session.id}: no card/customer; skipping.`);
+    return;
+  }
+
+  // Default for future off-session office-coffee charges.
+  await stripe.customers.update(customerId, {
+    invoice_settings: { default_payment_method: paymentMethodId },
+  });
+
+  await saveCompanyCard({
+    corporateAccountId: new ObjectId(accountIdRaw),
+    stripeCustomerId: customerId,
+    paymentMethodId,
+  });
+}
+
 /** Pull the subscription id out of an invoice across Stripe API shapes. */
 function subscriptionIdFromInvoice(invoice: Stripe.Invoice): string | null {
   const parent = invoice.parent;
@@ -120,7 +166,10 @@ export async function POST(request: Request) {
 
   try {
     if (event.type === "checkout.session.completed") {
-      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      const session = event.data.object as Stripe.Checkout.Session;
+      // One of these matches by metadata.kind; the other is a no-op.
+      await handleCheckoutCompleted(session);
+      await handleCompanyCardSetup(session);
       return NextResponse.json({ received: true });
     }
 

@@ -39,6 +39,55 @@ export async function getOrCreateStripeCustomer(user: User): Promise<string> {
   return customer.id;
 }
 
+/** Find or lazily create the Stripe customer for a company (Phase J.7) —
+ * distinct from any owner/personal customer; the company card lives here. */
+export async function getOrCreateCompanyStripeCustomer(account: CorporateAccount): Promise<string> {
+  if (account.stripeCustomerId) return account.stripeCustomerId;
+
+  const stripe = getStripe();
+  const customer = await stripe.customers.create({
+    name: account.company,
+    metadata: { corporateAccountId: account._id.toHexString() },
+  });
+
+  const accounts = await corporateAccountsCollection();
+  const updated = await accounts.findOneAndUpdate(
+    { _id: account._id, stripeCustomerId: { $exists: false } },
+    { $set: { stripeCustomerId: customer.id, updatedAt: new Date() } },
+    { returnDocument: "after" },
+  );
+  if (!updated) {
+    const fresh = await accounts.findOne({ _id: account._id });
+    if (fresh?.stripeCustomerId && fresh.stripeCustomerId !== customer.id) {
+      return fresh.stripeCustomerId;
+    }
+  }
+  return customer.id;
+}
+
+/** Persist the company card after its setup Checkout completes (Phase J.7).
+ * Stores the payment method on the account for per-day office-coffee charges;
+ * no upfront charge (rule #3). */
+export async function saveCompanyCard(args: {
+  corporateAccountId: ObjectId;
+  stripeCustomerId: string;
+  paymentMethodId: string;
+  now?: Date;
+}): Promise<void> {
+  const now = args.now ?? new Date();
+  const accounts = await corporateAccountsCollection();
+  await accounts.updateOne(
+    { _id: args.corporateAccountId },
+    {
+      $set: {
+        stripeCustomerId: args.stripeCustomerId,
+        companyStripePaymentMethodId: args.paymentMethodId,
+        updatedAt: now,
+      },
+    },
+  );
+}
+
 /**
  * Resolve the Stripe price for a plan by lookup key, creating the product
  * and price on first use. Idempotent: lookup keys are unique in Stripe.

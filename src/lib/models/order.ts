@@ -20,6 +20,15 @@ export const orderStatusSchema = z.enum([
 ]);
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
 
+/**
+ * Phase J — order source. `personal` coffee is billed to the member's own
+ * card; `corporate` (office) coffee is billed to the company card. Orders are
+ * unique per (userId, date, source), so a member can hold a personal AND an
+ * office order on the same day with no billing conflict (critical rule #17).
+ */
+export const orderSourceSchema = z.enum(["personal", "corporate"]);
+export type OrderSource = z.infer<typeof orderSourceSchema>;
+
 /** Immutable copy of the delivery location taken when the order is generated. */
 export const orderLocationSnapshotSchema = z.object({
   locationId: objectIdSchema,
@@ -31,11 +40,24 @@ export const orderLocationSnapshotSchema = z.object({
 
 export const orderSchema = baseDocumentSchema.extend({
   userId: objectIdSchema,
-  subscriptionId: objectIdSchema,
   /**
-   * Local delivery date (YYYY-MM-DD, Asia/Kuala_Lumpur). Together with
-   * userId this forms the idempotency key: a unique index on
-   * (userId, date) guarantees the cron can never double-generate.
+   * Personal orders carry the member's Subscription; office (corporate) orders
+   * have none — there are no seats, the company is billed per delivered office
+   * coffee (critical rule #17).
+   */
+  subscriptionId: objectIdSchema.optional(),
+  /** Phase J — `personal` (default) or `corporate` (office coffee). */
+  source: orderSourceSchema,
+  /** The membership an office order belongs to (corporate orders only). */
+  corporateMembershipId: objectIdSchema.optional(),
+  /** The company an office order is billed to (corporate orders only) —
+   * resolves the company card and the owner to notify. */
+  corporateAccountId: objectIdSchema.optional(),
+  /**
+   * Local delivery date (YYYY-MM-DD, Asia/Kuala_Lumpur). Together with userId
+   * and source this forms the idempotency key: a unique index on
+   * (userId, date, source) guarantees the cron can never double-generate, while
+   * still allowing one personal + one office order on the same day.
    */
   date: localDateSchema,
   /** Drink snapshot — never re-read live preferences after generation. */

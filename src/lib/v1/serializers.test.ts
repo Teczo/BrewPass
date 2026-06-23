@@ -51,6 +51,7 @@ function makeOrder(vendorId: ObjectId): Order {
     tenantId: DEFAULT_TENANT_ID,
     userId: new ObjectId(),
     subscriptionId: new ObjectId(),
+    source: "personal",
     date: "2026-06-15",
     drink: { drink: "Flat White", size: "regular", milk: "Oat", sugar: 1, strength: "strong" },
     location: {

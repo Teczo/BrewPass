@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { newDocumentMeta } from "@/lib/models";
 import type { Location, Order, Preference, Subscription, Vendor } from "@/lib/models";
 import {
+  buildOfficeOrder,
   buildOrder,
   distanceKm,
   evaluateCutoff,
@@ -168,7 +169,8 @@ describe("buildOrder", () => {
     });
 
     expect(order.userId.equals(sub.userId)).toBe(true);
-    expect(order.subscriptionId.equals(sub._id)).toBe(true);
+    expect(order.subscriptionId?.equals(sub._id)).toBe(true);
+    expect(order.source).toBe("personal");
     expect(order.date).toBe(WEDNESDAY);
     expect(order.status).toBe("scheduled");
     expect(order.assignmentMethod).toBe("ai_routed");
@@ -200,6 +202,46 @@ describe("buildOrder", () => {
 
     pref.defaultDrink.drink = "Mocha";
     expect(order.drink.drink).toBe("Flat White");
+  });
+});
+
+describe("buildOfficeOrder", () => {
+  it("builds a corporate order with no subscription, billed to the company", () => {
+    const userId = new ObjectId();
+    const membership = {
+      _id: new ObjectId(),
+      userId,
+      corporateAccountId: new ObjectId(),
+    };
+    const pref = makePreference(userId);
+    const location = makeLocation(userId);
+    const vendor = makeVendor();
+
+    const order = buildOfficeOrder({
+      membership,
+      drink: pref.defaultDrink,
+      schedule: pref.schedule,
+      location,
+      vendor,
+      assignmentMethod: "ai_routed",
+      priceSen: 1500,
+      localDate: WEDNESDAY,
+      now,
+    });
+
+    expect(order.source).toBe("corporate");
+    expect(order.subscriptionId).toBeUndefined();
+    expect(order.userId.equals(userId)).toBe(true);
+    expect(order.corporateMembershipId?.equals(membership._id)).toBe(true);
+    expect(order.corporateAccountId?.equals(membership.corporateAccountId)).toBe(true);
+    expect(order.priceSen).toBe(1500);
+    expect(order.status).toBe("scheduled");
+    expect(order.vendorId.equals(vendor._id)).toBe(true);
+    // Same cutoff/delivery instant maths as a personal order.
+    expect(order.cutoffAt.toISOString()).toBe("2026-06-09T22:00:00.000Z");
+    expect(order.deliverAt.toISOString()).toBe("2026-06-10T00:00:00.000Z");
+    // Drink is a copy, not a reference.
+    expect(order.drink).not.toBe(pref.defaultDrink);
   });
 });
 
