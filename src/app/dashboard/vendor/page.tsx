@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { VendorSelector } from "@/components/vendor-selector";
 import { locationsCollection, preferencesCollection, vendorsCollection } from "@/lib/collections";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { loadVendorCardsForUser } from "@/lib/vendor-selection";
 
@@ -27,7 +28,7 @@ export default async function VendorSelectionPage() {
     locationsCollection(),
     vendorsCollection(),
   ]);
-  const preference = await preferences.findOne({ userId: user._id });
+  const preference = await preferences.findOne(personalPreferenceFilter(user._id));
   if (!preference) {
     return (
       <Notice>

@@ -39,6 +39,7 @@ function makePreference(userId: ObjectId, overrides: Partial<Preference> = {}): 
     _id: new ObjectId(),
     ...newDocumentMeta(),
     userId,
+    scope: "personal",
     defaultDrink: {
       drink: "Flat White",
       size: "regular",

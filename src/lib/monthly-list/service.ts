@@ -12,6 +12,7 @@ import { newDocumentMeta } from "@/lib/models";
 import type { DrinkSpec, MonthlyList, MonthlyListEntry, Subscription, User } from "@/lib/models";
 import { ordersFromList, planMonthlyEntries } from "@/lib/monthly-list/planner";
 import { loadRoutingCandidates } from "@/lib/order-engine/routing-data";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import { slugify } from "@/lib/taxonomy";
 import { localDateOf, localTimeOf, tomorrowLocalDate } from "@/lib/time";
 import { emitOrderEvent } from "@/lib/webhooks/emit";
@@ -97,7 +98,7 @@ export async function proposeMonthlyList(
   const existing = await monthlyLists.findOne({ userId: user._id, period });
   if (existing?.status === "confirmed") return { ok: false, reason: "already_confirmed" };
 
-  const preference = await preferences.findOne({ userId: user._id });
+  const preference = await preferences.findOne(personalPreferenceFilter(user._id));
   if (!preference) return { ok: false, reason: "no_preference" };
 
   const location = await locations.findOne({

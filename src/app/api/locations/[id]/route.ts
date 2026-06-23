@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { locationsCollection, preferencesCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import { locationToJson } from "@/lib/serializers";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { locationInputSchema } from "@/lib/validation";
@@ -68,7 +69,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   const preferences = await preferencesCollection();
   const usedAsDefault = await preferences.findOne({
-    userId: user._id,
+    ...personalPreferenceFilter(user._id),
     defaultLocationId: locationId,
   });
   if (usedAsDefault) {

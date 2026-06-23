@@ -9,6 +9,7 @@ import {
   preferencesCollection,
 } from "@/lib/collections";
 import { periodOf, vendorNamesForList } from "@/lib/monthly-list/service";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import { monthlyListToJson } from "@/lib/serializers";
 import { drinkOptionsFrom, loadActiveTaxonomy } from "@/lib/taxonomy";
 import { DEFAULT_DRINK_OPTIONS } from "@/lib/taxonomy-options";
@@ -34,7 +35,7 @@ export default async function MonthlyListPage() {
     monthlyListsCollection(),
   ]);
   const [preference, subscription, listDoc] = await Promise.all([
-    preferences.findOne({ userId: user._id }),
+    preferences.findOne(personalPreferenceFilter(user._id)),
     getCurrentSubscription(user._id),
     monthlyLists.findOne({ userId: user._id, period }),
   ]);

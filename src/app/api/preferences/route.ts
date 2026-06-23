@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { locationsCollection, preferencesCollection, usersCollection } from "@/lib/collections";
 import { newDocumentMeta } from "@/lib/models";
+import { personalPreferenceFilter, PERSONAL_SCOPE } from "@/lib/preferences";
 import { preferenceToJson } from "@/lib/serializers";
 import { findUncoveredDrinkField, loadDrinkValueSets } from "@/lib/taxonomy";
 import { getOnboardingStatus, getOrCreateCurrentUser } from "@/lib/users";
@@ -15,7 +16,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const preferences = await preferencesCollection();
-  const doc = await preferences.findOne({ userId: user._id });
+  const doc = await preferences.findOne(personalPreferenceFilter(user._id));
   return NextResponse.json({ preference: doc ? preferenceToJson(doc) : null });
 }
 
@@ -52,19 +53,41 @@ export async function PUT(request: Request) {
 
   const now = new Date();
   const preferences = await preferencesCollection();
-  const updated = await preferences.findOneAndUpdate(
-    { userId: user._id },
-    {
-      $set: {
-        defaultDrink: parsed.data.defaultDrink,
-        schedule: parsed.data.schedule,
-        defaultLocationId,
-        updatedAt: now,
+  // Phase J.2: only ever touch the PERSONAL preference here. Find-then-write
+  // (rather than an upsert keyed on a single scope) so a legacy row written
+  // before the scope backfill is updated in place — and stamped with the
+  // personal scope — instead of spawning a duplicate.
+  const existing = await preferences.findOne(personalPreferenceFilter(user._id));
+  let updated: typeof existing;
+  if (existing) {
+    updated = await preferences.findOneAndUpdate(
+      { _id: existing._id },
+      {
+        $set: {
+          scope: PERSONAL_SCOPE,
+          defaultDrink: parsed.data.defaultDrink,
+          schedule: parsed.data.schedule,
+          defaultLocationId,
+          updatedAt: now,
+        },
       },
-      $setOnInsert: { _id: new ObjectId(), ...newDocumentMeta(), userId: user._id, createdAt: now },
-    },
-    { upsert: true, returnDocument: "after" },
-  );
+      { returnDocument: "after" },
+    );
+  } else {
+    const doc = {
+      _id: new ObjectId(),
+      ...newDocumentMeta(),
+      userId: user._id,
+      scope: PERSONAL_SCOPE,
+      defaultDrink: parsed.data.defaultDrink,
+      schedule: parsed.data.schedule,
+      defaultLocationId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await preferences.insertOne(doc);
+    updated = doc;
+  }
   if (!updated) {
     return NextResponse.json({ error: "Failed to save preference" }, { status: 500 });
   }

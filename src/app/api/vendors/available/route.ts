@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { locationsCollection, preferencesCollection } from "@/lib/collections";
+import { personalPreferenceFilter } from "@/lib/preferences";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { loadVendorCardsForUser } from "@/lib/vendor-selection";
 
@@ -19,7 +20,7 @@ export async function GET() {
     preferencesCollection(),
     locationsCollection(),
   ]);
-  const preference = await preferences.findOne({ userId: user._id });
+  const preference = await preferences.findOne(personalPreferenceFilter(user._id));
   if (!preference) {
     return NextResponse.json({ vendors: [], preferredVendorId: null, method: null });
   }
