@@ -30,5 +30,18 @@ export const corporateAccountSchema = baseDocumentSchema.extend({
   currentPeriodEnd: z.date().optional(),
   /** Phase J.2 — seed for members' office preferences. */
   officeDefaults: officeDefaultsSchema.optional(),
+  /**
+   * Phase J.3 — owner autonomy controls, enforced server-side on every member
+   * order/preference mutation (critical rule #18). Optional in the schema;
+   * unset is read as the confirmed defaults (individual / self-select on /
+   * decline on) via the autonomy resolvers, so pre-J.3 accounts behave
+   * correctly without a backfill.
+   */
+  selectionMode: z.enum(["bundle", "individual"]).optional(),
+  memberSelfSelect: z.boolean().optional(),
+  memberCanDecline: z.boolean().optional(),
+  /** The single office coffee everyone gets when selectionMode = bundle.
+   * Snapshotted at generation (rule #6); members never edit it. */
+  bundleDrink: drinkSpecSchema.optional(),
 });
 export type CorporateAccount = z.infer<typeof corporateAccountSchema>;

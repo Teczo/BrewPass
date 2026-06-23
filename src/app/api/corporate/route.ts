@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { corporateAccountsCollection, usersCollection } from "@/lib/collections";
+import { CORPORATE_AUTONOMY_DEFAULTS } from "@/lib/corporate/autonomy";
 import { newDocumentMeta } from "@/lib/models";
 import type { CorporateAccount } from "@/lib/models";
 import { getOrCreateCurrentUser } from "@/lib/users";
@@ -38,6 +39,11 @@ export async function POST(request: Request) {
     billingOwnerUserId: user._id,
     memberUserIds: [],
     seatCount: 1,
+    // Phase J.3 — start with the confirmed autonomy defaults (individual /
+    // self-select on / decline on); the owner can change them in settings.
+    selectionMode: CORPORATE_AUTONOMY_DEFAULTS.selectionMode,
+    memberSelfSelect: CORPORATE_AUTONOMY_DEFAULTS.memberSelfSelect,
+    memberCanDecline: CORPORATE_AUTONOMY_DEFAULTS.memberCanDecline,
     createdAt: now,
     updatedAt: now,
   };
