@@ -1,6 +1,6 @@
-const STEPS = ["Profile", "Locations", "Coffee"] as const;
+const STEPS = ["Profile", "Locations", "Coffee", "Payment"] as const;
 
-export function StepIndicator({ current }: { current: 1 | 2 | 3 }) {
+export function StepIndicator({ current }: { current: 1 | 2 | 3 | 4 }) {
   return (
     <ol className="flex gap-2 text-sm">
       {STEPS.map((label, index) => {

@@ -52,6 +52,7 @@ export function subscriptionToJson(subscription: Subscription) {
     id: subscription._id.toHexString(),
     externalId: subscription.externalId,
     plan: subscription.plan,
+    billingMode: subscription.billingMode ?? "subscription",
     status: subscription.status,
     quota: subscription.quota,
     currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
@@ -188,6 +189,7 @@ export function monthlyListToJson(list: MonthlyList, vendorNames: Map<string, st
         vendorName: vendorId ? (vendorNames.get(vendorId) ?? null) : null,
         assignmentMethod: entry.assignmentMethod,
         priceSen: entry.priceSen ?? null,
+        rationale: entry.rationale ?? null,
         skipped: entry.skipped,
       };
     }),

@@ -10,11 +10,13 @@ import {
 } from "@/lib/collections";
 import { newDocumentMeta } from "@/lib/models";
 import type { DrinkSpec, MonthlyList, MonthlyListEntry, Subscription, User } from "@/lib/models";
+import { aiPlanMonthlyEntries } from "@/lib/monthly-list/ai-planner";
 import { ordersFromList, planMonthlyEntries } from "@/lib/monthly-list/planner";
 import { loadRoutingCandidates } from "@/lib/order-engine/routing-data";
 import { personalPreferenceFilter } from "@/lib/preferences";
-import { slugify } from "@/lib/taxonomy";
+import { drinkOptionsFrom, loadActiveTaxonomy, slugify } from "@/lib/taxonomy";
 import { localDateOf, localTimeOf, tomorrowLocalDate } from "@/lib/time";
+import type { Priorities } from "@/lib/vendor-recommender";
 import { emitOrderEvent } from "@/lib/webhooks/emit";
 
 /** The KL calendar month (YYYY-MM) of a local date. */
@@ -85,6 +87,7 @@ export async function proposeMonthlyList(
   user: User,
   subscription: Subscription | null,
   period: string,
+  options: { priorities?: Priorities } = {},
   now: Date = new Date(),
 ): Promise<ProposeResult | ProposeError> {
   if (!subscription) return { ok: false, reason: "no_subscription" };
@@ -109,23 +112,46 @@ export async function proposeMonthlyList(
 
   const fromDate = fromDateFor(period, now);
   const candidates = await loadRoutingCandidates(fromDate);
-  const priceFor = await loadPriceLookup(candidates.map((candidate) => candidate.vendor._id));
 
-  const entries = planMonthlyEntries({
-    period,
-    fromDate,
-    scheduleDays: preference.schedule.days,
-    time: preference.schedule.time,
-    drink: preference.defaultDrink,
-    point: location.geo,
-    preferredVendorId: preference.preferredVendorId ?? null,
-    candidates,
-    nowLocalDate: localDateOf(now),
-    nowLocalTime: localTimeOf(now),
-    priceFor,
-  });
-
-  const generationMethod = preference.preferredVendorId ? "manual" : "ai";
+  // With questionnaire priorities, the AI varies the coffee AND the vendor per
+  // day (Phase A unified flow). Without them, plan the user's usual every day
+  // via the deterministic routing brain. Both produce the same editable list.
+  let entries: MonthlyListEntry[];
+  let generationMethod: "ai" | "manual";
+  if (options.priorities) {
+    const drinkOptions = drinkOptionsFrom(await loadActiveTaxonomy());
+    entries = await aiPlanMonthlyEntries({
+      period,
+      fromDate,
+      scheduleDays: preference.schedule.days,
+      time: preference.schedule.time,
+      anchorDrink: preference.defaultDrink,
+      allowedDrinks: (drinkOptions?.drinks ?? []).map((option) => option.value),
+      point: location.geo,
+      preferredVendorId: preference.preferredVendorId ?? null,
+      candidates,
+      priorities: options.priorities,
+      nowLocalDate: localDateOf(now),
+      nowLocalTime: localTimeOf(now),
+    });
+    generationMethod = "ai";
+  } else {
+    const priceFor = await loadPriceLookup(candidates.map((candidate) => candidate.vendor._id));
+    entries = planMonthlyEntries({
+      period,
+      fromDate,
+      scheduleDays: preference.schedule.days,
+      time: preference.schedule.time,
+      drink: preference.defaultDrink,
+      point: location.geo,
+      preferredVendorId: preference.preferredVendorId ?? null,
+      candidates,
+      nowLocalDate: localDateOf(now),
+      nowLocalTime: localTimeOf(now),
+      priceFor,
+    });
+    generationMethod = preference.preferredVendorId ? "manual" : "ai";
+  }
   const list = await monthlyLists.findOneAndUpdate(
     { userId: user._id, period },
     {

@@ -35,6 +35,10 @@ export const monthlyListEntrySchema = z.object({
   assignmentMethod: z.enum(["user_preferred", "ai_routed"]).nullable(),
   /** Vendor's price for the drink in sen, snapshotted at plan time. */
   priceSen: moneySenSchema.optional(),
+  /** AI's one-line "why this coffee + vendor" for the day. Set only on the
+   * AI-varied plan; absent on the deterministic/usual plan. Advisory copy —
+   * never read by the order pipeline. */
+  rationale: z.string().max(300).optional(),
   /** User opted out of this day — no order is generated for it. */
   skipped: z.boolean(),
 });

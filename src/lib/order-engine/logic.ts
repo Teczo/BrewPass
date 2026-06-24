@@ -40,7 +40,13 @@ export function evaluateGeneration(
   if (subscription.status !== "active" && subscription.status !== "trialing") {
     return { ok: false, reason: "subscription_inactive" };
   }
-  if (subscription.quota.used >= subscription.quota.total) {
+  // Card-on-file memberships pay per coffee and are not quota-gated (the
+  // schedule decides how many) — mirror evaluateCutoff. Prepaid plans
+  // (corporate/legacy) keep the quota gate.
+  if (
+    subscription.billingMode !== "card_on_file" &&
+    subscription.quota.used >= subscription.quota.total
+  ) {
     return { ok: false, reason: "quota_exhausted" };
   }
   if (!preference) {
