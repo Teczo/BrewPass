@@ -187,7 +187,7 @@ In Atlas: Browse Collections → `brewpass.users` → find your document →
 edit `role` from `"individual"` to `"admin"`. Then open
 `https://<domain>/admin` and run the one-time setup in §10.
 
-## 4. Stripe — subscriptions & per-day charging
+## 4. Stripe — card on file & per-day charging
 
 Use **test mode** first; repeat with live keys when ready.
 
@@ -201,10 +201,13 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
 2. Developers → **Webhooks** → Add endpoint:
    - URL: `https://<domain>/api/webhooks/stripe`
    - Events:
-     - `checkout.session.completed` — saves the card on file (SetupIntent)
+     - `checkout.session.completed` — saves the card on file (SetupIntent),
+       for both the individual card and the corporate company card (§4c)
      - `customer.subscription.created`, `customer.subscription.updated`,
-       `customer.subscription.deleted`
-     - `invoice.paid`, `invoice.payment_failed`
+       `customer.subscription.deleted` — **legacy/optional**: only the old
+       prepaid/seat subscriptions use these; the card-on-file model has no
+       recurring Stripe subscription
+     - `invoice.paid`, `invoice.payment_failed` — **legacy/optional** (same)
      - `account.updated` — Connect onboarding/capability changes (§4b)
      - `charge.dispute.created` — triggers refund + transfer reversal (§4b)
    - **Also enable "Listen to events on Connected accounts"** on this
@@ -212,21 +215,25 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
      it. (Alternatively add a second Connect-scoped endpoint at the same
      URL — the handler is the same.)
    - Copy the signing secret → `STRIPE_WEBHOOK_SECRET=whsec_...`
-3. **No product setup needed** — subscription products/prices self-provision
-   on first checkout via lookup keys, in MYR at the confirmed prices.
+3. **No product/price setup needed.** Individuals have **no priced plan** — they
+   just save a card (SetupIntent); the company card (§4c) is the same. Per-coffee
+   charges are created directly as PaymentIntents at cutoff, in MYR. (Only the
+   legacy prepaid/seat path self-provisions products/prices via lookup keys.)
 
-**Charging model (v2 — important).** The user is **not** charged the month
-upfront. At signup the card is validated and saved via a Stripe SetupIntent
-(Checkout in `setup` mode → `checkout.session.completed`); no charge yet.
-Then **each day's cutoff charges the user for that one coffee** into the
-**platform balance** and locks the order. Charging is fully automatic — the
-user does nothing daily. Any "monthly" feel is a statement/summary, never an
-upfront charge.
+**Charging model — important.** There is **no subscription fee and no priced
+plan** for individuals. At signup the card is validated and saved via a Stripe
+SetupIntent (Checkout in `setup` mode → `checkout.session.completed`); no charge
+yet. Then **each day's cutoff charges the user for that one coffee** into the
+**platform balance** and locks the order — the weekly schedule decides how many
+coffees, there's no monthly quota to buy. Charging is fully automatic; the user
+does nothing daily. Any "monthly" feel is a statement/summary, never an upfront
+charge.
 
-4. Test: subscribe with card `4242 4242 4242 4242` (any future expiry/CVC).
-   Confirm the plan shows "Active", the card is saved, and the webhook
-   deliveries show 200s. Then run the cutoff cron (see §11) and verify a
-   per-day PaymentIntent was created against the saved card.
+4. Test: at onboarding's **Payment** step (or `/dashboard/billing`), save card
+   `4242 4242 4242 4242` (any future expiry/CVC). Confirm the dashboard shows
+   "card on file · charged per coffee" and the webhook deliveries show 200s. Then
+   run the cutoff cron (see §11) and verify a per-day PaymentIntent was created
+   against the saved card.
 5. Going live: Stripe Malaysia account activation (business details), swap
    to live keys, and create a **second** webhook endpoint in live mode
    (signing secrets differ per mode). Enable Connect (§4b) in live too.
@@ -555,11 +562,14 @@ Run through in order:
 - [ ] At least one **active vendor** exists with a published menu and
       `payouts_enabled` Connect account (Vendor #1 at minimum)
 - [ ] Sign up as a subscriber, onboard (profile → location with geocoding
-      → taxonomy-based preferences), and pick a vendor — manual **and** the
-      AI recommendation flow (confirm the recommendation is editable before
-      it takes effect)
-- [ ] Confirm a **monthly list** → individual scheduled daily orders appear
-- [ ] Stripe: card saved at signup (no upfront charge); webhook deliveries 200
+      → taxonomy-based preferences → **save a card** at the Payment step), and
+      pick a vendor — manual **and** the AI recommendation flow (confirm the
+      recommendation is editable before it takes effect)
+- [ ] Confirm a **monthly list** via the AI planner: answer the priorities
+      questionnaire → a coffee **and** vendor proposed per day (or use the "just
+      use my usual" shortcut) → edit → confirm → scheduled daily orders appear
+- [ ] Stripe: card saved at the Payment step (no plan, no upfront charge);
+      webhook deliveries 200
 - [ ] Cron auth: `curl -H "Authorization: Bearer $CRON_SECRET" \
 https://<domain>/api/cron/generate-orders` → JSON summary
       (wrong/missing token must give 401/503)
