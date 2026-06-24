@@ -18,7 +18,21 @@ export const runtime = "nodejs";
 
 const periodSchema = z.string().regex(/^\d{4}-\d{2}$/);
 
-const proposeSchema = z.object({ period: periodSchema.optional() });
+const priorityField = z.number().int().min(0).max(3);
+const proposeSchema = z.object({
+  period: periodSchema.optional(),
+  /** Questionnaire priorities — when present, the AI varies the coffee and
+   * vendor per day; absent, the plan repeats the user's usual. */
+  priorities: z
+    .object({
+      proximity: priorityField,
+      price: priorityField,
+      speed: priorityField,
+      rating: priorityField,
+      drink: priorityField,
+    })
+    .optional(),
+});
 
 const editSchema = z.object({
   period: periodSchema,
@@ -80,7 +94,9 @@ export async function POST(request: Request) {
   const period = parsed.data.period ?? periodOf(localDateOf(new Date()));
 
   const subscription = await getCurrentSubscription(user._id);
-  const result = await proposeMonthlyList(user, subscription, period);
+  const result = await proposeMonthlyList(user, subscription, period, {
+    priorities: parsed.data.priorities,
+  });
   if (!result.ok) {
     const error = PROPOSE_ERRORS[result.reason];
     return NextResponse.json({ error: error.message }, { status: error.status });

@@ -189,6 +189,7 @@ export function monthlyListToJson(list: MonthlyList, vendorNames: Map<string, st
         vendorName: vendorId ? (vendorNames.get(vendorId) ?? null) : null,
         assignmentMethod: entry.assignmentMethod,
         priceSen: entry.priceSen ?? null,
+        rationale: entry.rationale ?? null,
         skipped: entry.skipped,
       };
     }),

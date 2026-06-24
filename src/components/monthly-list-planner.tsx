@@ -10,6 +10,17 @@ import type { VendorCard } from "@/lib/vendor-selection";
 
 const WEEKDAY_LABELS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+const PRIORITIES = [
+  { key: "proximity", label: "Close to me" },
+  { key: "price", label: "Low price" },
+  { key: "speed", label: "Fast delivery" },
+  { key: "rating", label: "Highly rated" },
+  { key: "drink", label: "Great at my coffee" },
+] as const;
+const PRIORITY_LEVELS = ["Doesn't matter", "Nice to have", "Important", "Top priority"];
+type Priorities = Record<(typeof PRIORITIES)[number]["key"], number>;
+const DEFAULT_PRIORITIES: Priorities = { proximity: 2, price: 1, speed: 1, rating: 1, drink: 1 };
+
 function monthLabel(period: string): string {
   const [y, m] = period.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-GB", {
@@ -31,6 +42,9 @@ export function MonthlyListPlanner({ period, initialList, vendors, drinkOptions 
   const [list, setList] = useState<MonthlyListJson | null>(initialList);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [priorities, setPriorities] = useState<Priorities>(DEFAULT_PRIORITIES);
+  // Whether the questionnaire panel is open (always open when there's no list).
+  const [planning, setPlanning] = useState(false);
 
   async function call(
     url: string,
@@ -56,9 +70,20 @@ export function MonthlyListPlanner({ period, initialList, vendors, drinkOptions 
     }
   }
 
-  async function generate() {
+  async function generateWithAi() {
+    const next = await call("/api/monthly-list", "POST", { period, priorities });
+    if (next) {
+      setList(next);
+      setPlanning(false);
+    }
+  }
+
+  async function generateUsual() {
     const next = await call("/api/monthly-list", "POST", { period });
-    if (next) setList(next);
+    if (next) {
+      setList(next);
+      setPlanning(false);
+    }
   }
 
   async function editDay(date: string, edit: Record<string, unknown>) {
@@ -89,33 +114,81 @@ export function MonthlyListPlanner({ period, initialList, vendors, drinkOptions 
     }
   }
 
-  if (!list) {
-    return (
-      <div className="flex flex-col gap-4 rounded-md border border-neutral-200 p-6">
-        <p className="text-sm text-neutral-600">
-          Let the assistant plan a coffee and a vendor for every delivery day in{" "}
-          <span className="font-medium">{monthLabel(period)}</span>. You review the whole month,
-          tweak any day, then confirm once — no daily fiddling.
-        </p>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+  const questionnaire = (
+    <div className="flex flex-col gap-4 rounded-md border border-neutral-200 p-6">
+      <p className="text-sm text-neutral-600">
+        Answer a few questions and the assistant plans a coffee <em>and</em> a vendor for every
+        delivery day in <span className="font-medium">{monthLabel(period)}</span> — varying the
+        coffee so it stays interesting. You review the whole month, tweak any day, then confirm
+        once.
+      </p>
+
+      <div className="flex flex-col gap-3">
+        <p className="text-sm font-medium">What matters most to you?</p>
+        {PRIORITIES.map((priority) => (
+          <label key={priority.key} className="flex items-center justify-between gap-3 text-sm">
+            <span>{priority.label}</span>
+            <select
+              className="rounded border border-neutral-300 px-2 py-1"
+              value={priorities[priority.key]}
+              disabled={busy}
+              onChange={(e) =>
+                setPriorities((prev) => ({ ...prev, [priority.key]: Number(e.target.value) }))
+              }
+            >
+              {PRIORITY_LEVELS.map((label, level) => (
+                <option key={level} value={level}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           disabled={busy}
-          onClick={generate}
-          className="self-start rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+          onClick={generateWithAi}
+          className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
         >
-          {busy ? "Planning…" : "Build my month"}
+          {busy ? "Planning…" : "Plan my month with AI"}
         </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={generateUsual}
+          className="text-sm text-neutral-500 hover:underline disabled:opacity-50"
+        >
+          Just use my usual every day
+        </button>
+        {list && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setPlanning(false)}
+            className="text-sm text-neutral-500 hover:underline disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        )}
       </div>
-    );
-  }
+    </div>
+  );
+
+  if (!list) return questionnaire;
 
   const confirmed = list.status === "confirmed";
   const plannedDays = list.entries.filter((entry) => !entry.skipped && entry.vendorId).length;
 
   return (
     <div className="flex flex-col gap-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && !planning && <p className="text-sm text-red-600">{error}</p>}
+
+      {planning && !confirmed && questionnaire}
 
       <div className="flex items-center justify-between">
         <div>
@@ -130,14 +203,16 @@ export function MonthlyListPlanner({ period, initialList, vendors, drinkOptions 
             Confirmed
           </span>
         ) : (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={generate}
-            className="rounded border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
-          >
-            Re-plan
-          </button>
+          !planning && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setPlanning(true)}
+              className="rounded border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+            >
+              Re-plan
+            </button>
+          )
         )}
       </div>
 
@@ -225,6 +300,10 @@ export function MonthlyListPlanner({ period, initialList, vendors, drinkOptions 
                   Skip
                 </label>
               </>
+            )}
+
+            {entry.rationale && !entry.skipped && (
+              <p className="w-full pl-28 text-xs text-neutral-400 italic">{entry.rationale}</p>
             )}
           </li>
         ))}
