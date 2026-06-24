@@ -74,12 +74,12 @@ export default async function MonthlyListPage() {
 
       {!hasLiveSubscription ? (
         <section className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900">
-          <p className="text-sm">Start a plan to build your monthly list.</p>
+          <p className="text-sm">Add your card to build your monthly list.</p>
           <Link
             href="/dashboard/billing"
             className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
           >
-            See plans
+            Add your card
           </Link>
         </section>
       ) : !preference || !location ? (

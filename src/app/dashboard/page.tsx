@@ -135,9 +135,10 @@ export default async function DashboardPage() {
           <div>
             <h2 className="font-semibold">BrewPass {PLANS[subscription.plan].name}</h2>
             <p className="text-sm text-neutral-500">
-              {subscription.status === "paused" ? "Paused" : "Active"} ·{" "}
-              {Math.max(0, subscription.quota.total - subscription.quota.used)} of{" "}
-              {subscription.quota.total} coffees left this period
+              {subscription.status === "paused" ? "Paused" : "Active"}
+              {subscription.billingMode === "card_on_file"
+                ? " · charged per coffee, no monthly fee"
+                : ` · ${Math.max(0, subscription.quota.total - subscription.quota.used)} of ${subscription.quota.total} coffees left this period`}
             </p>
           </div>
           <Link href="/dashboard/billing" className="text-sm text-amber-800 hover:underline">
@@ -147,14 +148,14 @@ export default async function DashboardPage() {
       ) : (
         <section className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900">
           <div>
-            <p className="font-medium">No active plan yet.</p>
-            <p className="text-sm">Pick a plan and your daily coffee is sorted.</p>
+            <p className="font-medium">No card on file yet.</p>
+            <p className="text-sm">Add your card and your daily coffee is sorted.</p>
           </div>
           <Link
             href="/dashboard/billing"
             className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
           >
-            See plans
+            Add your card
           </Link>
         </section>
       )}

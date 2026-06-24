@@ -54,6 +54,8 @@ export function SubscriptionPanel({
     month: "long",
     year: "numeric",
   });
+  // Card-on-file memberships pay per coffee — no monthly quota to show.
+  const perCoffee = subscription.billingMode === "card_on_file";
   const quotaLeft = Math.max(0, subscription.quota.total - subscription.quota.used);
 
   return (
@@ -63,25 +65,31 @@ export function SubscriptionPanel({
           <h2 className="text-lg font-semibold">BrewPass {planName}</h2>
           <p className="text-sm text-neutral-500">
             {STATUS_LABELS[subscription.status] ?? subscription.status}
+            {perCoffee && subscription.status === "active" && " · charged per coffee, no monthly fee"}
             {subscription.cancelAtPeriodEnd && ` · ends ${periodEnd}`}
-            {!subscription.cancelAtPeriodEnd &&
+            {!perCoffee &&
+              !subscription.cancelAtPeriodEnd &&
               subscription.status === "active" &&
               ` · renews ${periodEnd}`}
           </p>
         </div>
-        <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900">
-          {quotaLeft} of {subscription.quota.total} coffees left
-        </span>
+        {!perCoffee && (
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900">
+            {quotaLeft} of {subscription.quota.total} coffees left
+          </span>
+        )}
       </div>
 
-      <div className="h-2 overflow-hidden rounded-full bg-neutral-100">
-        <div
-          className="h-full bg-amber-700"
-          style={{
-            width: `${Math.min(100, (subscription.quota.used / Math.max(1, subscription.quota.total)) * 100)}%`,
-          }}
-        />
-      </div>
+      {!perCoffee && (
+        <div className="h-2 overflow-hidden rounded-full bg-neutral-100">
+          <div
+            className="h-full bg-amber-700"
+            style={{
+              width: `${Math.min(100, (subscription.quota.used / Math.max(1, subscription.quota.total)) * 100)}%`,
+            }}
+          />
+        </div>
+      )}
 
       {!manageable && (
         <p className="text-sm text-neutral-500">

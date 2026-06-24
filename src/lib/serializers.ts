@@ -52,6 +52,7 @@ export function subscriptionToJson(subscription: Subscription) {
     id: subscription._id.toHexString(),
     externalId: subscription.externalId,
     plan: subscription.plan,
+    billingMode: subscription.billingMode ?? "subscription",
     status: subscription.status,
     quota: subscription.quota,
     currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),

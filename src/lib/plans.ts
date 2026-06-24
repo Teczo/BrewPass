@@ -1,19 +1,27 @@
 import type { SubscriptionPlan } from "@/lib/models";
 
 /**
- * Plan catalogue — confirmed business decisions (2026-06-09/10):
- * - Individual: RM149/199/299 with quotas 12/22/31 per month
- * - Student: RM149 for 22 (weekday pattern), unlocked by admin verification
- * - Corporate: RM199 per seat on one subscription (quantity = seats),
- *   each member tracked with their own 22/month quota
- * Prepaid model throughout: the subscription covers the coffees; orders
- * decrement quota and are never charged individually.
+ * Plan catalogue.
+ *
+ * **Current model (charge-then-deliver, per coffee).** Individuals are no
+ * longer sold a priced monthly tier. At signup the card is saved (Stripe
+ * SetupIntent, no upfront charge) and each coffee is charged at its own
+ * cutoff. The only plan an individual gets is `standard` — no price, no quota
+ * cap; the weekly schedule in their Preference decides which days produce a
+ * coffee. `quota` is retained on the record for backward compatibility but is
+ * not a cap for card-on-file memberships (see `evaluateGeneration`/
+ * `evaluateCutoff`).
+ *
+ * The priced tiers below (`lite`/`weekday`/`premium`/`student`) are **legacy**:
+ * kept only so historical/migrated subscriptions still resolve a name. They are
+ * not offered in the UI. Corporate is the team flow (billed per delivered
+ * office coffee on the company card — no seats).
  */
 export interface PlanDefinition {
   plan: SubscriptionPlan;
   name: string;
   priceSen: number;
-  /** Coffees included per billing month. */
+  /** Coffees included per billing month. 0 = no cap (card-on-file). */
   quota: number;
   description: string;
   /** Stripe price lookup key — stable handle for resolving/creating prices. */
@@ -21,6 +29,14 @@ export interface PlanDefinition {
 }
 
 export const PLANS: Record<SubscriptionPlan, PlanDefinition> = {
+  standard: {
+    plan: "standard",
+    name: "Pay as you go",
+    priceSen: 0,
+    quota: 0,
+    description: "A coffee on every day you schedule — charged per coffee, no monthly fee.",
+    lookupKey: "brewpass_standard_card_on_file",
+  },
   lite: {
     plan: "lite",
     name: "Lite",
@@ -65,9 +81,9 @@ export const PLANS: Record<SubscriptionPlan, PlanDefinition> = {
 
 export const PLAN_LIST = Object.values(PLANS);
 
-/** Plans anyone can pick from the billing page (student is conditional,
- * corporate goes through the team flow). */
-export const PUBLIC_PLANS = [PLANS.lite, PLANS.weekday, PLANS.premium];
+/** The single plan a new individual membership gets — card-on-file, per-coffee
+ * charging, no priced tier. */
+export const DEFAULT_INDIVIDUAL_PLAN = PLANS.standard;
 
 export function planByLookupKey(lookupKey: string): PlanDefinition | undefined {
   return PLAN_LIST.find((plan) => plan.lookupKey === lookupKey);

@@ -3,6 +3,9 @@ import { z } from "zod";
 import { baseDocumentSchema, objectIdSchema } from "@/lib/models/shared";
 
 export const subscriptionPlanSchema = z.enum([
+  // Current individual plan: card-on-file, per-coffee charging, no priced tier.
+  "standard",
+  // Legacy priced tiers — kept only so historical/migrated subscriptions resolve.
   "lite",
   "weekday",
   "premium",

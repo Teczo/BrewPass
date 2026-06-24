@@ -35,7 +35,7 @@ export default async function OnboardingPreferencesPage() {
       <PreferencesForm
         locations={locationDocs.map(locationToJson)}
         initial={preference ? preferenceToJson(preference) : null}
-        nextHref="/dashboard"
+        nextHref="/onboarding/payment"
         options={drinkOptionsFrom(taxonomy) ?? DEFAULT_DRINK_OPTIONS}
       />
     </section>
