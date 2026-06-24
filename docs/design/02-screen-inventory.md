@@ -29,12 +29,20 @@ Legend: 🟢 subscriber · 🟠 vendor · 🔵 admin · ⚪ shared/unauth
 
 ## 🟢 Subscriber app
 
+Onboarding is **4 steps** (`step-indicator`): Profile → Locations → Coffee →
+Payment.
+
 ### `/onboarding` — Step 1: Profile
-- **Purpose:** capture name/phone after first login. Step 1 of 3.
+- **Purpose:** capture name/phone after first login. Step 1 of 4.
 - **Components:** `step-indicator`, `profile-form`.
 - **States:** new user (empty) vs returning (prefilled). Validation errors.
 
-### `/onboarding/preferences` — Step 2: Your usual
+### `/onboarding/locations` — Step 2: Locations
+- **Purpose:** add delivery addresses (label + address, geocoded).
+- **Feature:** "Use my current location" (native geolocation on mobile).
+- **Components:** `locations-manager`, `step-indicator`.
+
+### `/onboarding/preferences` — Step 3: Your usual (Coffee)
 - **Purpose:** define the default drink + weekly schedule.
 - **Drink spec (taxonomy-based):** drink (Flat White, Latte, Cappuccino,
   Americano, Long Black, Mocha, Espresso, Cold Brew…), size (Small/Regular/Large),
@@ -42,19 +50,29 @@ Legend: 🟢 subscriber · 🟠 vendor · 🔵 admin · ⚪ shared/unauth
 - **Schedule:** days of week (Mon–Sun) + delivery time.
 - **Components:** `preferences-form`, `step-indicator`.
 - **Key UX:** this is choosing from a **platform taxonomy**, not one café's menu.
+- Marks onboarding complete; routes to the Payment step.
 
-### `/onboarding/locations` — Step 3: Locations
-- **Purpose:** add delivery addresses (label + address, geocoded).
-- **Feature:** "Use my current location" (native geolocation on mobile).
-- **Components:** `locations-manager`, `step-indicator`.
+### `/onboarding/payment` — Step 4: Payment (save a card)
+- **Purpose:** save the card on file via a Stripe **SetupIntent** — **no charge,
+  no plan to pick**. Coffee is charged per day at cutoff (charge-then-deliver).
+- **Components:** `save-card-button`, `step-indicator`.
+- **States:** card not yet saved (primary "Save my card & finish" + an "I'll add
+  it later" escape to the dashboard) · saved/`?success=1` ("you're all set → Go
+  to dashboard") · `?canceled=1` notice.
+- **Key UX:** make "no subscription fee, charged only for the coffee you get"
+  unmistakable. Card-save is encouraged but **not a hard gate** — the dashboard
+  nudges anyone who skipped it.
 
 ### `/dashboard` — Subscriber home (the main screen)
 - **Purpose:** the one screen a subscriber lands on. The whole "calm" promise
   lives here. Gated: redirects vendors→`/vendor`; incomplete onboarding→`/onboarding`.
 - **Sections (in order):**
   1. **Header** — "Hi, {firstName} ☕", email · role, Log out.
-  2. **Subscription strip** — plan name, active/paused, "X of Y coffees left this
-     period", Manage link. *Empty state:* "No active plan yet → See plans."
+  2. **Subscription strip** — for a live card-on-file membership: "BrewPass Pay
+     as you go", Active/Paused, **"charged per coffee, no monthly fee"**, Manage
+     link (no quota counter). *Empty state:* "No card on file yet → Add your
+     card." (Legacy prepaid/corporate subscriptions still show an "X of Y coffees
+     left" quota.)
   3. **Upcoming order card** (`upcoming-order`) — tomorrow's (or today's) coffee:
      drink spec, location, status, edit/skip controls (until cutoff), add-ons.
   4. **Live delivery tracker** (`delivery-tracker`) — only when status is
@@ -87,24 +105,38 @@ Legend: 🟢 subscriber · 🟠 vendor · 🔵 admin · ⚪ shared/unauth
 - **States:** no selection yet · AI recommendation shown (editable) · manual
   browse · confirmed preferred vendor.
 
-### `/dashboard/monthly` — Monthly list planner (the big subscriber moment)
-- **Purpose:** AI proposes a coffee + vendor for **every delivery day** in the
-  period; user reviews the whole month, edits any day (swap vendor, change drink,
-  skip), then **confirms once** → creates scheduled daily orders.
-- **Components:** `monthly-list-planner`.
-- **States:** `proposed` (editable) vs `confirmed`. Per-day edit. Skip a day.
-  Mid-month join (list starts from join date).
+### `/dashboard/monthly` — AI monthly planner (the big subscriber moment)
+- **Purpose:** the unified AI flow. The user answers a short **priorities
+  questionnaire** (proximity / price / speed / rating / great-at-my-coffee, each
+  0–3) and the assistant proposes a coffee **and** a vendor for **every** delivery
+  day — **varying the coffee** across the month, each with a one-line **rationale**
+  ("Cold Brew from Café B — top-rated, 0.4 km"). The user reviews the whole month,
+  edits any day (swap vendor, change drink, skip), then **confirms once** →
+  scheduled daily orders.
+- **Components:** `monthly-list-planner` (includes the questionnaire panel).
+- **States:** questionnaire (no list yet, or "Re-plan" reopens it) · `proposed`
+  (editable, each day shows its rationale) vs `confirmed`. Per-day edit. Skip a
+  day. Mid-month join (list starts from join date).
+- **Shortcut:** a "just use my usual every day" option skips the questionnaire and
+  plans the user's usual drink with routed vendors (the prior deterministic plan).
+- **Graceful fallback:** if the AI is unavailable, it silently produces the
+  usual-every-day plan — the screen never blocks on the model.
 - **Redesign note:** reviewing ~31 days must feel light, not like a spreadsheet.
-  Calendar/agenda patterns; batch-confirm with easy per-day overrides.
+  Calendar/agenda patterns; batch-confirm with easy per-day overrides; surface the
+  rationale subtly (it's advisory copy).
 
-### `/dashboard/billing` — Billing & plans
-- **Purpose:** pick/change plan, manage subscription, saved card (Stripe).
-- **Components:** `plan-picker`, `subscription-panel`.
-- **Plans shown:** Lite/Weekday/Premium/Student (personal plans) with price +
-  quota + description. Student requires verification. **Office coffee is not a
-  plan here** — it lives in the separate corporate flow (`/dashboard/corporate`),
-  billed per delivery, not per seat.
-- **States:** no plan (pick) · active · paused · canceled · student-unverified.
+### `/dashboard/billing` — Payment (card on file)
+- **Purpose:** manage the **card on file** — there is **no plan to pick**. Save a
+  card if none yet, replace it, or pause/cancel/resume coffee. Coffee is charged
+  per day at cutoff (charge-then-deliver, no monthly fee).
+- **Components:** `save-card-button`, `subscription-panel` (per-coffee framing —
+  no quota bar for card-on-file).
+- **States:** no card yet ("Add your card to start") · card on file (Active, with
+  a "Replace card" action) · paused · canceled (save a card to start again) ·
+  `?success=1` / `?canceled=1` notices. (Legacy prepaid/corporate subscriptions
+  still render the quota-based panel.)
+- **Note:** office coffee is **not** here — it's the separate corporate flow
+  (`/dashboard/corporate`), billed per delivery on the company card.
 
 ### `/dashboard/corporate` — Office coffee (team account)
 - **Purpose:** one screen serving **two independent audiences**: a **member**
@@ -245,15 +277,16 @@ component set covering all of them.
 
 | Component | Used in | Role |
 | --------- | ------- | ---- |
-| `step-indicator` | onboarding | 3-step progress |
+| `step-indicator` | onboarding | 4-step progress (Profile · Locations · Coffee · Payment) |
 | `profile-form`, `preferences-form`, `locations-manager` | onboarding | core capture forms |
-| `plan-picker`, `subscription-panel` | billing | plan selection + subscription state |
+| `save-card-button` | onboarding payment / billing | save or replace the card on file (SetupIntent) |
+| `subscription-panel` | billing | card-on-file state + pause/cancel (quota only for legacy plans) |
 | `upcoming-order` | dashboard | the daily coffee card + edit/skip |
 | `delivery-tracker` | dashboard | live map/ETA when out for delivery |
 | `health-card` | dashboard | opt-in consumption summary |
 | `rate-order` | dashboard | post-delivery star rating |
 | `vendor-selector` | choose-vendor | manual + AI hybrid selection |
-| `monthly-list-planner` | monthly | whole-month plan/review/confirm |
+| `monthly-list-planner` | monthly | AI questionnaire → varied coffees+vendors · review/edit/confirm |
 | `office-coffee-tracker` | dashboard | compact office-coffee ETA/status for members |
 | `overlap-notice` | dashboard | advisory same-day personal/office overlap banner |
 | `corporate-panel` | corporate | create-company CTA (legacy seat UI superseded) |
