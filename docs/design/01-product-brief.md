@@ -63,17 +63,22 @@ as dense as admin.
 
 ## What subscribers get (feature surface)
 
-- 3-step onboarding (profile → preferences → locations).
-- Personal plans: **Lite RM149/12**, **Weekday RM199/22**, **Premium
-  RM299/31**, **Student RM149/22** (verified). (Office coffee is **not** a
-  personal plan tier — it's a separate corporate flow billed per delivery, see
-  "corporate teams" below.)
+- **4-step onboarding** (profile → locations → coffee → payment). The payment
+  step just **saves a card** (Stripe SetupIntent) — no charge, no plan to pick.
+- **No subscription fee and no priced plan tiers.** An individual saves a card
+  and is **charged per coffee** at each day's cutoff (charge-then-deliver). Their
+  weekly schedule decides how many coffees; there's no monthly quota to buy.
+  (Office coffee is separate — a corporate flow billed per delivery on the
+  company card, see "corporate teams" below.)
 - Add-ons (pastries/drinks) charged per order on top of the coffee.
 - A **"usual"** drink + weekly schedule + delivery locations.
 - **Vendor choice**: pick a preferred café, or answer a short questionnaire and
   let AI recommend one. Editable, takes effect only after confirm.
-- **Monthly list**: AI proposes a coffee + vendor for every delivery day; the
-  user reviews the whole month, edits any day, confirms once.
+- **AI monthly planner**: answer a short **priorities questionnaire** and the
+  assistant proposes a coffee **and** a vendor for **every** delivery day —
+  **varying the coffee across the month** so it stays interesting, each with a
+  one-line rationale. The user reviews the whole month, edits any day, and
+  confirms once. (A "just use my usual every day" shortcut skips the questions.)
 - Per-day editing until that day's cutoff; skip days; live delivery tracking
   when a coffee is out for delivery; post-delivery rating; opt-in health summary.
 - **Join a company** with a code to also receive office coffee — without
@@ -143,9 +148,9 @@ coffee on one company card** (charge-then-deliver, same as personal).
 1. **No daily checkout/approval for subscribers.** The product's promise is that
    the daily run is automatic. Design confirmation + pre-cutoff editing, not a
    daily cart.
-2. **One monthly confirmation, then forget.** The monthly list is the big
-   subscriber moment — make reviewing a whole month feel light, not like a
-   31-row spreadsheet chore.
+2. **One monthly confirmation, then forget.** The AI monthly planner is the big
+   subscriber moment — a short questionnaire, then a whole month of varied
+   coffees+vendors to review lightly, not a 31-row spreadsheet chore.
 3. **Cutoff is a first-class concept.** Show clearly when editing closes and when
    things lock/charge. Subscriber, vendor, and admin all revolve around it.
 4. **Taxonomy, not vendor menus, for preferences.** A subscriber picks "Flat
@@ -168,4 +173,9 @@ coffee on one company card** (charge-then-deliver, same as personal).
     default stays one-tap "buy the usual"; packs/campaigns are optional nudges.
     Keep **"Vendor Pack"** (a vendor-priced product) and **`bundle` selection
     mode** (owner picks one drink for everyone) visually and verbally distinct.
+11. **No priced plans, no subscription fee (individuals).** Onboarding ends by
+    *saving a card*, not picking a tier; coffee is charged per day at cutoff.
+    Don't reintroduce a plan-picker or a monthly-quota meter for individuals.
+    (Legacy prepaid/corporate records may still show a quota — that's not the
+    individual model.)
 </content>

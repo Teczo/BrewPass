@@ -10,15 +10,16 @@ rules live in [`USER_GUIDE.md`](../../USER_GUIDE.md).
 
 ### F1 — First-time signup → first coffee scheduled
 1. **Landing `/`** → "Log in / Sign up" (Auth0).
-2. **Onboarding step 1 `/onboarding`** — name, phone.
-3. **Step 2 `/onboarding/preferences`** — pick the "usual" drink (taxonomy) +
+2. **Step 1 `/onboarding`** — name, phone.
+3. **Step 2 `/onboarding/locations`** — add delivery address(es).
+4. **Step 3 `/onboarding/preferences`** — pick the "usual" drink (taxonomy) +
    weekly schedule + time.
-4. **Step 3 `/onboarding/locations`** — add delivery address(es).
-5. **Billing `/dashboard/billing`** — choose a plan; save card (Stripe SetupIntent,
-   **no upfront charge**).
-6. **Dashboard `/dashboard`** — sees subscription strip + first upcoming order.
+5. **Step 4 `/onboarding/payment`** — **save a card** (Stripe SetupIntent,
+   **no charge, no plan to pick**). An "I'll add it later" escape is allowed.
+6. **Dashboard `/dashboard`** — sees the card-on-file strip + first upcoming order.
 - **Design focus:** make 1→6 feel quick and reassuring; the payoff is "your coffee
-  is sorted." Card is validated, not charged — say so.
+  is sorted." Say it plainly: **no subscription fee** — the card is saved and
+  charged only for the coffee you actually get, each day.
 
 ### F2 — The invisible daily cycle (the core promise)
 1. Night before: notification "tomorrow's coffee is {drink} to {location}."
@@ -41,19 +42,28 @@ rules live in [`USER_GUIDE.md`](../../USER_GUIDE.md).
 - **Design focus:** make AI vs manual feel like two doors to the same calm result;
   confirmation is the commit point.
 
-### F4 — Plan the whole month, then forget
+### F4 — Plan the whole month with AI, then forget
 1. Dashboard "Plan your month →" → **`/dashboard/monthly`**.
-2. AI proposes a coffee + vendor for **every delivery day**.
-3. User reviews the month, **edits any day** (swap vendor, change drink, skip).
-4. **Confirm once** → scheduled daily orders are created for the period.
-5. Later: user can still edit an individual upcoming day until its own cutoff.
+2. Answer a short **priorities questionnaire** (proximity / price / speed /
+   rating / great-at-my-coffee). *Or* tap "just use my usual every day" to skip it.
+3. The AI proposes a coffee **and** a vendor for **every delivery day** — the
+   coffee **varied** across the month — each with a one-line rationale.
+4. User reviews the month, **edits any day** (swap vendor, change drink, skip);
+   "Re-plan" reopens the questionnaire.
+5. **Confirm once** → scheduled daily orders are created for the period.
+6. Later: user can still edit an individual upcoming day until its own cutoff.
 - **Design focus:** reviewing ~31 days must feel light (agenda/calendar, batch
-  confirm, easy per-day override) — not a spreadsheet.
+  confirm, easy per-day override) — not a spreadsheet. The questionnaire is a
+  quick, optional gate; the rationale per day is subtle, advisory copy.
+- **Advisory + confirm-gated:** nothing takes effect until confirm; if the AI is
+  unavailable the plan silently falls back to the usual every day.
 
-### F5 — Manage billing / plan changes
-1. **`/dashboard/billing`** → change personal plan, pause, cancel, update card.
-2. Student → verification gate. (Office coffee is **not** here — it's the
-   corporate flow, F5b–F5d, billed per delivery, not a personal plan.)
+### F5 — Manage payment (card on file)
+1. **`/dashboard/billing`** (now a **Payment** screen) → save/replace the card,
+   pause, cancel, or resume coffee. **No plan to change** — there's no priced
+   tier; coffee is charged per day at cutoff.
+2. (Office coffee is **not** here — it's the corporate flow, F5b–F5d, billed per
+   delivery on the company card.)
 
 ### F5b — Join a company by code (member, keeps personal account)
 1. **`/dashboard/corporate`** → `join-company-panel` → enter a **join code**.
