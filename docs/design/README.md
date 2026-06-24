@@ -63,6 +63,11 @@ These come from the product spec and are non-negotiable. The full list is in
   first-class concept across all three apps.
 - **Three roles, three surfaces**: subscriber, vendor, admin. A vendor is just
   "Vendor #1 …N" — the platform operator's own café has no special UI.
+- **Personal and office coffee coexist, never override.** A person can be both a
+  personal subscriber and a company member; the two bill different cards and can
+  both occur the same day. Any overlap notice is **advisory, not a daily prompt**.
+- **Promotions are optional savings**, never forced comparison shopping; keep
+  "Vendor Pack" (a vendor-priced product) distinct from `bundle` selection mode.
 - The stack is **Next.js App Router + React + TypeScript + Tailwind**, also
   wrapped in **Capacitor** for iOS/Android — so the subscriber app must work as
   a **mobile-first** native-feeling app, not just a desktop web page.

@@ -59,6 +59,12 @@ Legend: 🟢 subscriber · 🟠 vendor · 🔵 admin · ⚪ shared/unauth
      drink spec, location, status, edit/skip controls (until cutoff), add-ons.
   4. **Live delivery tracker** (`delivery-tracker`) — only when status is
      `out_for_delivery`; map + ETA.
+  4b. **Office coffee** (members of a company only): `office-coffee-tracker` —
+     a compact "arriving ~9:05 · Flat White · Level 12" view of today's office
+     coffee (map optional), shown **alongside** the personal coffee, never
+     replacing it. `overlap-notice` — an **advisory, dismissible** banner when a
+     member has both a personal and an office coffee the same day, offering a
+     one-tap "cancel one" with a remember-my-choice option (default: keep both).
   5. **"Plan your month" promo** → `/dashboard/monthly`.
   6. **Health card** (`health-card`) — opt-in 7-day coffee summary.
   7. **Two-up: "Your usual"** (drink summary + "Choose your vendor →") and
@@ -94,14 +100,39 @@ Legend: 🟢 subscriber · 🟠 vendor · 🔵 admin · ⚪ shared/unauth
 ### `/dashboard/billing` — Billing & plans
 - **Purpose:** pick/change plan, manage subscription, saved card (Stripe).
 - **Components:** `plan-picker`, `subscription-panel`.
-- **Plans shown:** Lite/Weekday/Premium/Student/Corporate with price + quota +
-  description. Student requires verification; Corporate is per-seat.
+- **Plans shown:** Lite/Weekday/Premium/Student (personal plans) with price +
+  quota + description. Student requires verification. **Office coffee is not a
+  plan here** — it lives in the separate corporate flow (`/dashboard/corporate`),
+  billed per delivery, not per seat.
 - **States:** no plan (pick) · active · paused · canceled · student-unverified.
 
-### `/dashboard/corporate` — Corporate / team account
-- **Purpose:** team admin manages seats and members (each member gets own quota).
-- **Components:** `corporate-panel`.
-- **States:** seat purchase/checkout, invite/track members.
+### `/dashboard/corporate` — Office coffee (team account)
+- **Purpose:** one screen serving **two independent audiences**: a **member**
+  joining/seeing companies, and (if the user owns a company) an **owner**
+  dashboard. Billed **per delivered office coffee on one company card — no
+  seats**.
+- **Member side (always shown):** `join-company-panel` — redeem a **join code**
+  to link this account to a company (personal account untouched); list the
+  offices the user already belongs to.
+- **Owner side (only if the user owns a company):**
+  - `corporate-owner-dashboard` — save/replace the **company card** (Stripe
+    SetupIntent, no upfront charge); view/share/rotate/revoke **join codes**
+    (reusable or single-use, optional redemption cap); set **office defaults**
+    (drink/schedule/location); **autonomy toggles** (`selectionMode`
+    bundle/individual, `memberSelfSelect`, `memberCanDecline` — server-enforced);
+    and a **member roster** (joined?, office coffee set?, today's/tomorrow's
+    selection, want vs skip, delivery status; owner can set the bundle drink and,
+    where allowed, toggle want/skip on a member's behalf).
+  - `office-pack-panel` — buy a vendor **pack** (+ individual top-ups) for the
+    team and assign members (Phase K); optional savings, never forced.
+  - If the user owns no company: a "Run coffee for your team" CTA
+    (`corporate-panel` → create account).
+- **States:** not-a-member/not-an-owner (CTAs only) · member of N companies ·
+  owner with/without company card · card saved / card setup canceled (banner) ·
+  bundle vs individual selection mode.
+- **Redesign note:** keep the **member** and **owner** halves clearly separated,
+  and make the no-seats, pay-per-delivery model legible. This replaced the old
+  per-seat corporate dashboard.
 
 ---
 
@@ -121,7 +152,7 @@ All `/vendor/*` screens are gated to vendor-linked accounts and branch on vendor
 - **Purpose:** the working screen during a shift.
 - **Header:** business name + status chip ("accepting orders"/paused/offline),
   "Today's queue · {date}", "{n} orders scheduled for tomorrow (locks 6:00 AM)",
-  and nav: Menu · Capacity · Earnings · Profile & hours · Log out.
+  and nav: Menu · Capacity · Earnings · Promotions · Profile & hours · Log out.
 - **Quality strip** (`VendorQualityStrip`): rating (★ + count), acceptance %,
   on-time %. Red banner if auto-suspended by quality review.
 - **Today's board** (`vendor-board`): each confirmed order = customer name, drink
@@ -149,6 +180,19 @@ All `/vendor/*` screens are gated to vendor-linked accounts and branch on vendor
 - **Components:** `vendor-earnings`.
 - **Key UX:** payouts are **delivery-gated** — distinguish held vs released funds.
   Show commission retained. Never imply instant payout.
+
+### `/vendor/promotions` — Promotions (Phase K)
+- **Purpose:** create/manage time-boxed campaigns (`VendorPromotion`): **packs**
+  (`packSize` + vendor-set `packPrice`; `fixed_drink` = same coffee ×N, or
+  `buyer_choice` = buyer picks `packSize` drinks, count locked), **buy-N-get-M**,
+  and **time-window discounts** (e.g. 50% off 2–4pm). Each carries a validity
+  window and status (`draft`/`active`/`paused`/`expired`).
+- **Feature:** **platform-suggested campaigns** — the dashboard analyses the
+  vendor's own order data and *suggests* promotions ("Tuesday afternoons are your
+  quietest…"). Suggestions only; the vendor always decides.
+- **Components:** `vendor-pack-manager`.
+- **Key UX:** packs are **vendor-pinned** (an office that buys one is not
+  rerouted to another vendor) — make the "your priced product" framing clear.
 
 ### `/vendor/profile` — Profile & hours
 - **Purpose:** business profile, operating hours, service-area (radius/polygon via
@@ -181,6 +225,19 @@ All `/vendor/*` screens are gated to vendor-linked accounts and branch on vendor
 
 ---
 
+## Backend-only surfaces (no UI to design — Phase I)
+
+For completeness, two Phase I additions have **no screens** and need no design:
+
+- **Versioned `/v1` API** (`/api/v1/*`) — a thin, authenticated HTTP layer over
+  the domain services that exposes the stable `externalId` (never raw `_id`).
+  Consumed by integrations, not the BrewPass UI.
+- **Outbound webhooks** — signed lifecycle events (`order.scheduled`,
+  `vendor.assigned`, `order.confirmed`, `order.delivered`, `order.failed`,
+  `payout.released`, `refund.issued`) delivered to registered subscribers.
+  Subscriptions are managed **via admin API only** (`/api/admin/webhooks`) —
+  there is no admin screen for them yet, so a redesign can ignore them.
+
 ## Cross-app component library (current)
 
 These are the existing building blocks; a redesign should produce a coherent
@@ -197,7 +254,13 @@ component set covering all of them.
 | `rate-order` | dashboard | post-delivery star rating |
 | `vendor-selector` | choose-vendor | manual + AI hybrid selection |
 | `monthly-list-planner` | monthly | whole-month plan/review/confirm |
-| `corporate-panel` | corporate | seats + members |
+| `office-coffee-tracker` | dashboard | compact office-coffee ETA/status for members |
+| `overlap-notice` | dashboard | advisory same-day personal/office overlap banner |
+| `corporate-panel` | corporate | create-company CTA (legacy seat UI superseded) |
+| `join-company-panel` | corporate | redeem a join code · list joined offices |
+| `corporate-owner-dashboard` | corporate | company card · join codes · office defaults · autonomy toggles · member roster |
+| `office-pack-panel` | corporate | buy a vendor pack + top-ups, assign members |
+| `vendor-pack-manager` | vendor promotions | create/manage packs, bundles, time-window discounts + suggestions |
 | `vendor-apply-form`, `operating-hours-field` | vendor apply/profile | application + hours |
 | `vendor-board`, `vendor-upcoming` | vendor home | today's fulfillment + tomorrow |
 | `vendor-menu-manager`, `vendor-menu-onboarding` | vendor menu | taxonomy mapping + AI extract |
