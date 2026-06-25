@@ -50,10 +50,11 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 - **Email:** Resend.
 - **Storage:** Vercel Blob (vendor logos, menu images).
 - **Monitoring:** Sentry.
+- **Couriers:** `CourierAdapter` abstraction — provider-agnostic delivery dispatch, tracking, and webhooks. Adapters: **Lalamove** (Malaysia / MY market, primary); **Uber Direct** (Australia / AU market, primary — confirmed Perth coverage, self-serve sandbox); **DoorDash Drive Classic** (AU, secondary/fallback — allowlist-only, AU sandbox requires DoorDash Support to enable per-account; confirm granted API surface before building in detail). AU dispatch uses primary-with-auto-fallback (no vendor choice, no real-time quoting at cutoff). Courier fee is a platform cost — never charged to the user and never deducted from vendor payout.
 
 ### Conventions (carried from v1)
 - TypeScript strict. Zod-validate all external input.
-- Money in integer minor units (sen), `MYR`.
+- Money in integer minor units (sen for MYR, cents for AUD); currency always travels with the amount. `Delivery.courierFeeCurrency` (`"MYR"` | `"AUD"`) records which currency the courier fee is denominated in — never assume MYR for courier-related amounts. The courier fee field is `courierFeeAmount` (renamed from `courierFeeAmountSen`; no migration needed — there are no pre-existing Delivery records).
 - Timestamps UTC in DB; convert at edges. Default tz `Asia/Kuala_Lumpur`.
 - Server-authoritative: routing, cutoff, payment capture, and payouts are server-only.
 - Idempotency keys on all cron-triggered and payment/payout actions. Never double-charge, double-generate, or double-pay.
@@ -70,7 +71,7 @@ Everything else is comparatively mechanical. Treat those two with extra care and
 ## Data Model Changes
 
 **New entities**
-- **Vendor** — businessName, ownerUserId, status (`pending` | `active` | `paused` | `suspended` | `offline`), address, geocoded lat/lng, serviceAreaRadius (or polygon), operatingHours, capacity (daily cap + optional per-slot caps), stripeConnectAccountId, commissionRateOverride (nullable → falls back to platform default), **payoutCadence (`per_order` | `daily_batch`, default `daily_batch`)**, ratingScore, acceptanceRate, onTimeRate.
+- **Vendor** — businessName, ownerUserId, status (`pending` | `active` | `paused` | `suspended` | `offline`), address, geocoded lat/lng, serviceAreaRadius (or polygon), operatingHours, capacity (daily cap + optional per-slot caps), stripeConnectAccountId, commissionRateOverride (nullable → falls back to platform default), **payoutCadence (`per_order` | `daily_batch`, default `daily_batch`)**, ratingScore, acceptanceRate, onTimeRate. **`market` (`"MY"` | `"AU"`, required)** — the vendor's operating market. Geocoded at onboarding to suggest a default; the admin sets it authoritatively at approval (pre-filled from geocode, overridable). Used for per-market courier adapter resolution. `courierProvider` (nullable) — reserved for per-vendor override within their market; platform auto-fallback logic governs AU vendors by default (see Phase M).
 - **OptionTaxonomy** (platform-level, seeded) — canonical drinks, sizes, milks, add-ons, strength levels. The single source of truth subscriber preferences point to.
 - **VendorMenuItem** — vendorId, taxonomyRef, price, availability toggle, optional image. Maps a vendor's offering onto the taxonomy.
 - **VendorPayout** — vendorId, period, gross, commission, net, stripeTransferId, status, statement data. Always released **post-delivery**; `payoutCadence` only controls how often held funds are swept to the vendor.
@@ -274,10 +275,57 @@ Run only after the platform is stable (A–H). Build in **small, short-lived fea
 
 - **L.1 — `DeliveryRun` grouping.** Add `DeliveryRun` (see data model): groups N Orders across different vendors into one drop/time/route. Orders stay per-vendor — each is made and **paid delivery-gated independently**; the run is only the delivery unit. This is the schema change that breaks the implicit "one delivery = one vendor" assumption; do it as a clean, tested addition (Phase A discipline), and make `DeliveryRun` optional so existing single-vendor deliveries are unaffected.
 - **L.2 — Per-order confirmation within a run.** Delivery confirmation is **per Order inside the run**, not per run. If the run completes but Café B's coffee never arrived, refund **only** that Order (auto-refund, rule #1) and pay the others. The existing per-order refund logic already fits this — reuse it.
-- **L.3 — Courier multi-stop (dependency-gated).** A run needs a **multi-stop pickup** courier job (rider hits Café A → Café B → drop) via the `CourierAdapter` abstraction. **This is blocking and external:** if the chosen courier (Lalamove first) does not support multi-stop pickup in-market, L.3 cannot ship as designed — do **not** fake it with sequential single trips (that kills both the "together" promise and the cost saving). Confirm courier multi-stop capability before committing build effort here.
+- **L.3 — Courier multi-stop (dependency-gated).** A run needs a **multi-stop pickup** courier job (rider hits Café A → Café B → drop) via the `CourierAdapter` abstraction. **This is blocking and external:** if the chosen courier (Lalamove first) does not support multi-stop pickup in-market, L.3 cannot ship as designed — do **not** fake it with sequential single trips (that kills both the "together" promise and the cost saving). Confirm courier multi-stop capability before committing build effort here. **AU market note:** Uber Direct and DoorDash Drive Classic standard products support one pickup location per delivery — neither is a candidate for L.3 as designed. If consolidated delivery is needed in Perth, a third AU adapter with confirmed multi-stop support (candidates: Sherpa, Stuart) must be validated first. AU market launches single-vendor-per-delivery only; L.3 for Perth is deferred until multi-stop coverage is confirmed.
 - **L.4 — Quality/logistics rules (design before coding).** Hot coffee + multi-stop = real constraints: prep-time staggering (don't make A's coffee until B is nearly ready), a **max hold time** for the first-picked coffee, pickup-route ordering, and a policy for a late café (hold the run / drop without them / refund their item). These are product decisions to settle in the spec, ideally validated with a **manual pilot** (a person literally doing a 2-café→1-office run ~10×) before building the consolidation engine.
 - **Build with tests** for L.1 (run grouping leaves single-vendor flow unchanged) and L.2 (partial-failure refunds exactly one order, pays the rest) before depending on L.3's courier integration.
 - **Deliverable:** an office (or, later, any subscriber) can receive coffees from multiple vendors in a single consolidated delivery, with each vendor made and paid independently, partial failures refunded per-order, gated on real multi-stop courier capability and validated logistics rules.
+
+### Phase M — Perth Market Courier Adapters (additive)
+**Goal:** add Uber Direct and DoorDash Drive Classic as two new `CourierAdapter` implementations for the Australia / AU market, behind the same interface that Lalamove uses for MY. **Purely additive** — no changes to the delivery state machine, payout logic, refund logic, or any existing Lalamove/Grab behavior. The only schema additions are `Vendor.market`, `Delivery.courierFeeAmount` (renamed from `courierFeeAmountSen`), and `Delivery.courierFeeCurrency`.
+
+**Prerequisites (confirm before going live):**
+- Uber Direct: self-serve sandbox available; production requires Uber for Business developer account → Delivery API access → `client_id`, `client_secret`, `customer_id`. Perth CBD coverage confirmed.
+- DoorDash Drive Classic: AU sandbox requires DoorDash Support to enable per-account; production is allowlist-only. Confirm which API surface (Drive Classic vs standard Drive) Support grants before building the DoorDash adapter in detail. Perth AU coverage confirmed at the product level; API surface TBC.
+- Both adapters follow the same posture as the existing Grab adapter: `isConfigured()` returns false until production env vars are set, so adapters are dormant in production until access is granted.
+
+**AU dispatch model — primary with auto-fallback (no vendor choice):**
+- `MARKET_PRIMARY_COURIERS["AU"] = "uber_direct"` (Uber Direct is the AU primary).
+- If the primary adapter's `dispatch()` call fails, automatically retry with the next configured AU adapter (`doordash_drive`, once its API access is granted). The fallback chain is ordered and platform-controlled — AU vendors do not choose their courier.
+- No real-time quoting at cutoff (avoids added latency to the charging cron). Quote is fetched at dispatch time, same as the existing Lalamove flow.
+- **Forward-reference:** once AU volume justifies optimizing courier cost, upgrade to parallel quoting (both adapters quote simultaneously with a timeout, pick cheapest). That is a future, separately-scoped decision; the auto-fallback model is the launch posture.
+
+**What changes (additive only):**
+- `courierProviderSchema` enum: add `"uber_direct"` and `"doordash_drive"`.
+- `Vendor` entity: add `market: "MY" | "AU"` (required; geocoded default, admin-authoritative at approval — see Phase M conventions).
+- `Delivery` entity: rename `courierFeeAmountSen` → `courierFeeAmount`; add `courierFeeCurrency: "MYR" | "AUD"`. No migration needed — no pre-existing Delivery records.
+- `src/lib/courier/index.ts`: add `MARKET_PRIMARY_COURIERS` map and `AU_FALLBACK_CHAIN`; update `resolveCourierProvider` to use `vendor.market` when no explicit provider is set, with auto-fallback on dispatch failure. Existing MY behavior unchanged.
+- `src/lib/courier/status.ts`: add `mapUberDirectStatus()` and `mapDoorDashDriveStatus()` functions; register in `mapCourierStatus()` dispatcher.
+- `src/lib/courier/uber-direct.ts` and `src/lib/courier/doordash-drive.ts`: new adapter files.
+- Webhook routes: handled automatically by the existing `[provider]` dynamic route — no route file changes needed.
+
+**Status mapping (no state machine changes):**
+
+| BrewPass State | Uber Direct | DoorDash Drive Classic |
+|---|---|---|
+| `pending` | `pending` | `created`, `confirmed` |
+| `assigned` | `pickup` | `enroute_to_pickup`, `arrived_at_pickup` |
+| `picked_up` | `pickup_complete`, `dropoff` | `picked_up`, `enroute_to_dropoff`, `arrived_at_dropoff` |
+| `delivered` | `delivered` | `delivered`, `dasher_dropped_off_with_issue`* |
+| `failed` | `canceled`, `returned` | `cancelled` |
+
+\* `dasher_dropped_off_with_issue` → map to `delivered`; store raw status in `courierStatusRaw` for admin review; payout proceeds (the coffee physically left the dasher's hands). Revisit after observing real Perth volume — if this status frequently signals a non-delivery, reconsider.
+
+**Webhook security:**
+- Uber Direct: HMAC-SHA256 on `X-Postmates-Signature` header; secret in `UBER_DIRECT_WEBHOOK_SECRET`. Key events: `delivery.status.changed`, `delivery.courier.updated`.
+- DoorDash Drive Classic: HMAC-SHA256 on `X-DoorDash-Signature` header; secret in `DOORDASH_DRIVE_WEBHOOK_SECRET`. Key events: `delivery_status` events. (Confirm exact header and event names against the Drive Classic API surface granted by DoorDash Support.)
+- Both: idempotent per `(provider, courierOrderId, targetStatus)` in `webhookEventsCollection`, same mechanism as Lalamove.
+
+**Uber Direct OAuth token caching:**
+Uber Direct uses OAuth 2.0 Client Credentials (access token with TTL). In serverless, store the token in MongoDB — a `courierTokens` document keyed by provider with `expiresAt`; refresh on expiry before dispatch. No new infrastructure (rule #12); Atlas already handles it. DoorDash Drive Classic uses per-request JWT signing (RS256 with `signing_secret`) — no token storage needed.
+
+**Build with tests** for each adapter (quote, dispatch, tracking, cancel, webhook verify, webhook parse, status mapping) against sandbox before enabling in production. The existing `lalamove.test.ts` is the template.
+
+**Deliverable:** AU-market vendors are dispatched via Uber Direct (primary) with DoorDash Drive Classic as automatic fallback on dispatch failure, all through the existing `CourierAdapter` interface and state machine, with zero change to charging or payout logic. AU launch is single-vendor-per-delivery only; Phase L.3 for Perth is deferred pending multi-stop courier validation.
 
 ---
 
@@ -305,12 +353,13 @@ Run only after the platform is stable (A–H). Build in **small, short-lived fea
 20. **Vendor Packs are vendor-pinned and opt out of taxonomy reroute (the sanctioned exception to rule #5).** A Pack order does not auto-reroute to another vendor; if the pack's vendor is offline, skip/refund that day's pack and notify the admin. This exception applies **only** to Packs, must be explicit, and never silent. All non-pack orders remain taxonomy-portable per rule #5.
 21. **Promotions are optional savings, never forced comparison shopping.** The team admin's default flow stays one-tap "buy the usual"; packs/campaigns surface as optional nudges. Platform-suggested campaigns (K.3) are suggestions only — the vendor always decides; the platform never changes a vendor's prices on its own.
 22. **A consolidated `DeliveryRun` groups orders for delivery only; each order is still made and paid per-vendor, delivery-gated, and confirmed individually.** Partial failure refunds exactly the missing order(s) and pays the rest. A run is mutually exclusive with a Pack on the same delivery. Multi-stop courier capability is an external dependency — never fake consolidation with sequential single trips.
+23. **Courier adapters are additive and courier-agnostic.** New adapters implement `CourierAdapter` exactly — no exceptions, no interface overloads. A new adapter never touches charging, payout, refund, or state machine logic; it only translates between the provider's API and the neutral `CourierAdapter` types. Courier fee is always a platform cost — never charged to the user and never deducted from vendor payout, regardless of adapter. Provider-specific concerns (auth, idempotency key format, status names, webhook signature headers, token refresh) live entirely inside the adapter file. AU dispatch uses primary-with-auto-fallback (Uber Direct → DoorDash Drive Classic); fallback logic lives in `courier/index.ts`, not inside the adapters themselves.
 
 ---
 
 ## Build Order Reminder
-A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G → H → **I (additive, last of the core build)** → **J (corporate team accounts — additive; coexists with personal accounts)** → **K (vendor promotions / packs — additive)** → **L (multi-vendor consolidated delivery — ambitious; gated on courier multi-stop)**.
-D (routing) and E (charging/payouts) carry almost all the risk. If anything is shaky, it's there. D.5 (monthly list) is what makes "choose once a month" real and feeds scheduled orders into E. **I (service boundary + `/v1` API + webhooks + `externalId`/`tenantId` reservations) is additive and runs only once A–H are stable — it improves the backend without changing the frontend.** **K** adds vendor-priced packs/campaigns for offices (packs first, K.1), surfaced as optional savings. **L** is the differentiator and the hardest — its blocker is courier multi-stop capability, not code; validate logistics with a manual pilot before building the consolidation engine.
+A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G → H → **I (additive, last of the core build)** → **J (corporate team accounts — additive; coexists with personal accounts)** → **K (vendor promotions / packs — additive)** → **L (multi-vendor consolidated delivery — ambitious; gated on courier multi-stop)** → **M (Perth courier adapters — additive; gated on API access approval and AU sandbox enablement)**.
+D (routing) and E (charging/payouts) carry almost all the risk. If anything is shaky, it's there. D.5 (monthly list) is what makes "choose once a month" real and feeds scheduled orders into E. **I (service boundary + `/v1` API + webhooks + `externalId`/`tenantId` reservations) is additive and runs only once A–H are stable — it improves the backend without changing the frontend.** **K** adds vendor-priced packs/campaigns for offices (packs first, K.1), surfaced as optional savings. **L** is the differentiator and the hardest — its blocker is courier multi-stop capability, not code; validate logistics with a manual pilot before building the consolidation engine. **M** is additive and can begin in parallel with J–L once API access is provisioned; it does not depend on J, K, or L. AU market L.3 (consolidated delivery in Perth) needs separate multi-stop courier validation — Uber Direct and DoorDash Drive Classic are single-pickup only.
 
 ---
 
@@ -337,3 +386,17 @@ customers come on board:
   request a 300s budget; Hobby caps function runtime lower. Harmless at test
   volume (jobs finish in well under a second), but the daily
   charging/payout sweeps need the headroom at real order volume.
+- [ ] **Register AU courier webhook URLs before onboarding Perth vendors.**
+  In each provider's developer dashboard, register:
+  - Uber Direct: `https://[domain]/api/webhooks/courier/uber_direct`
+  - DoorDash Drive Classic: `https://[domain]/api/webhooks/courier/doordash_drive`
+  Set `UBER_DIRECT_WEBHOOK_SECRET` and `DOORDASH_DRIVE_WEBHOOK_SECRET` in Vercel env vars
+  to match the secrets configured in each provider dashboard.
+- [ ] **Confirm DoorDash Drive Classic API surface with DoorDash Support** before
+  building the DoorDash adapter in detail. AU sandbox requires Support to enable
+  per-account; confirm whether the granted surface is Drive Classic or standard Drive,
+  as endpoints, auth, and webhook event names may differ.
+- [ ] **Apply for Uber Direct and DoorDash Drive production API access** (both are
+  gated behind a business account application). Adapters build and test against sandbox;
+  `isConfigured()` returns false until production env vars are set, so adapters stay
+  dormant in production until access is granted.
