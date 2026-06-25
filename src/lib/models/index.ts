@@ -15,6 +15,7 @@ export * from "@/lib/models/vendor-menu-draft";
 export * from "@/lib/models/vendor-promotion";
 export * from "@/lib/models/pack-purchase";
 export * from "@/lib/models/delivery";
+export * from "@/lib/models/delivery-run";
 export * from "@/lib/models/courier-token";
 export * from "@/lib/models/corporate-account";
 export * from "@/lib/models/corporate-membership";

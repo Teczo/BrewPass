@@ -10,6 +10,7 @@ import {
 import { getCourierAdapter, resolveCourierChain } from "@/lib/courier";
 import { priorStatesFor, shouldApplyTransition } from "@/lib/courier/status";
 import type { CourierWebhookEvent } from "@/lib/courier/types";
+import { recomputeRunStatus } from "@/lib/delivery/runs";
 import { newDocumentMeta } from "@/lib/models";
 import type { CourierProvider, DeliveryStatus, Order, Vendor } from "@/lib/models";
 import { sendSms } from "@/lib/notifications";
@@ -340,6 +341,9 @@ async function applyTransition(
       await notifyDelivered(order);
       // Phase I.5: best-effort outbound event.
       await emitOrderEvent("order.delivered", { ...order, status: "delivered" }, now);
+      // Phase L.2: roll the per-order outcome up into the run's aggregate
+      // status (display/ops only — never a gate on this order's payout).
+      await recomputeRunForOrder(order, now);
     }
     return;
   }
@@ -355,10 +359,26 @@ async function applyTransition(
     // (refundFailedDelivery emits refund.issued.)
     await refundFailedDelivery(orderId, now);
     // Phase I.5: best-effort outbound event for the failed delivery.
-    if (order)
+    if (order) {
       await emitOrderEvent("order.failed", { ...order, status: "failed", failureReason }, now);
+      // Phase L.2: a partial failure inside a run refunds only this order (done
+      // above) and leaves the rest paid — reflect that in the run's rollup.
+      await recomputeRunForOrder(order, now);
+    }
   }
   // picked_up: delivery-only; the order stays out_for_delivery.
+}
+
+/** Best-effort run-status rollup for an order's terminal outcome (Phase L.2).
+ * Swallows errors — the per-order money path has already completed and must
+ * never be undone by a display-only aggregate update. */
+async function recomputeRunForOrder(order: Order, now: Date): Promise<void> {
+  if (!order.deliveryRunId) return;
+  try {
+    await recomputeRunStatus(order.deliveryRunId, now);
+  } catch (error) {
+    console.error(`Run-status recompute for order ${order._id.toHexString()} failed:`, error);
+  }
 }
 
 async function notifyDelivered(order: Order): Promise<void> {
