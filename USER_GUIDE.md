@@ -46,13 +46,16 @@ BrewPass has **four** parties, each with their own portal/role:
 
 | Party | Who they are | What they do |
 |-------|--------------|--------------|
-| **Subscriber** | An individual coffee drinker (or a student, or a corporate team member) | Sets coffee preferences, delivery locations, schedule; gets a coffee per scheduled day; can modify/skip each day; rates deliveries. |
+| **Subscriber** | An individual coffee drinker, or a student, or a member of a company team | Sets coffee preferences, delivery locations, schedule; gets a coffee per scheduled day; can modify/skip each day; rates deliveries. |
 | **Vendor** | An existing coffee business (café/roaster) | Applies to join, publishes a menu mapped to the platform taxonomy, sets prices & capacity, accepts/prepares/delivers daily orders, gets paid after delivery. |
 | **Platform Operator (Admin)** | The BrewPass team | Approves/suspends vendors, sets commission, monitors routing health, handles disputes/refunds, manages users and roles. |
 | **Vendor #1** | BrewPass's own original coffee operation | Just another vendor on the platform — no special-casing. It is the first vendor onboarded by the marketplace migration. |
 
 > Authentication for all parties is via **Auth0**. Roles (individual, student,
-> corporate, vendor, admin) determine which portal a logged-in user can access.
+> vendor, admin) determine which portal a logged-in user can access. **Team
+> (office) coffee is a relationship, not a role** — joining a company never
+> changes a user's personal role, plan, or preferences. See the dedicated
+> [Team Guide](./TEAM_GUIDE.md).
 
 ---
 
@@ -66,18 +69,20 @@ BrewPass has **four** parties, each with their own portal/role:
 | **Weekday** | RM199 | 22 | Every working day |
 | **Premium** | RM299 | 31 | A coffee every single day |
 | **Student** | RM149 | 22 | Verified students (Weekday volume at the Lite price) |
-| **Corporate** | RM199 per seat | 22 per member | Whole teams (one bill, per-member quota) |
 
 - **Lite, Weekday, Premium** are open to anyone on the billing page.
 - **Student** is unlocked only after an **admin verifies** the student — it then
   appears as an option.
-- **Corporate** is purchased through the team flow (not the personal billing page).
+- **Team (office) coffee is not a plan.** A company isn't billed per seat or per
+  month — it pays **per delivered office coffee** on a company card
+  (charge-then-deliver), entirely separate from these personal plans. See the
+  [Team Guide](./TEAM_GUIDE.md).
 
 ### 3.2 Add-ons (charged per order, on top of the coffee)
 
-Optional extras a subscriber can attach to a day's order. They are **never** part
-of the coffee quota and are charged separately to the saved card at cutoff.
-(Add-ons are not available on corporate plans.)
+Optional extras a subscriber can attach to a day's order. They are charged
+separately to the saved **personal** card at cutoff. (Add-ons are a personal
+purchase — they are not available on office/team coffee.)
 
 | Add-on | Price | Type |
 |--------|-------|------|
@@ -150,7 +155,7 @@ The platform runs three scheduled jobs each day (KL time):
 | Time (KL) | Job | What happens |
 |-----------|-----|--------------|
 | **8:00 PM** | Generate orders | Creates tomorrow's order for every eligible subscriber, picks a vendor, snapshots the drink/price/location, and sends the night-before reminder. |
-| **6:00 AM** | Cutoff | Locks each order, charges the card (or decrements quota), charges add-ons, and records vendor acceptance. After this, the day's order can't be changed. |
+| **6:00 AM** | Cutoff | Locks each order, charges the card (the member's own card for personal coffee, the company card for office coffee), charges add-ons, and records vendor acceptance. After this, the day's order can't be changed. |
 | **11:00 PM** | Payouts | Sweeps held funds from **delivered** orders to vendors (for vendors on the daily-batch cadence). |
 
 ### Step by step
@@ -166,8 +171,9 @@ The platform runs three scheduled jobs each day (KL time):
    drink, switch the delivery location, add add-ons, swap the vendor, or skip the
    day entirely. Skipping doesn't consume their quota.
 4. **6:00 AM — Cutoff.** The order locks (`confirmed`). The platform charges the
-   subscriber's saved card for that coffee (or decrements quota on prepaid plans),
-   charges any add-ons, and records the vendor's acceptance.
+   saved card for that coffee — the subscriber's own card for personal coffee, the
+   company card for office coffee — charges any add-ons, and records the vendor's
+   acceptance. The order is only released to the vendor if the charge succeeds.
 5. **Daytime — Fulfillment.** The vendor sees the order on their board and starts
    *preparing.* When they hit "Ready — hand off," the platform **dispatches a
    courier** (Lalamove) to collect from the vendor and deliver to the subscriber.
@@ -190,7 +196,7 @@ The platform runs three scheduled jobs each day (KL time):
 scheduled ──(6 AM cutoff)──► confirmed ──► preparing ──► out_for_delivery ──► delivered
     │                                                                              │
     ├──(user skips before cutoff)──► skipped                          (subscriber can rate)
-    └──(no quota / inactive / charge fails)──► failed ──► (customer refunded)
+    └──(inactive / charge fails after retries)──► failed ──► (customer refunded)
 ```
 
 Each order has one **delivery record** that runs its own state machine during the
@@ -275,23 +281,26 @@ interaction required.
 
 ## 9. Payments, Charging & Payouts
 
-### How subscribers are charged
+### How subscribers are charged (card-on-file, charge-then-deliver)
 
-BrewPass supports two billing modes:
+At signup the card is **validated and saved but not charged**. Each day at the
+6:00 AM cutoff, the subscriber is charged **just for that day's coffee** (plus any
+add-ons) into the platform balance — and the order is only released to the vendor
+if the charge succeeds. Charging is invisible and automatic; the subscriber does
+nothing daily. A monthly statement/summary gives the "one monthly payment" feel
+without an upfront charge.
 
-- **Card-on-file (individual & student plans).** At signup the card is **validated
-  and saved but not charged**. Each day at the 6:00 AM cutoff, the subscriber is
-  charged **just for that day's coffee** (plus any add-ons) into the platform
-  balance. Charging is invisible and automatic — the subscriber does nothing daily.
-  A monthly statement/summary gives the "one monthly payment" feel without an
-  upfront charge.
-- **Prepaid quota (corporate & legacy plans).** A recurring monthly subscription
-  pays for the plan; each confirmed order **decrements the quota** instead of
-  charging per coffee. Quota resets at the start of each billing period.
+If a charge fails at cutoff, the platform **retries 3 times over ~10 minutes**;
+if it still fails, that single day is **skipped and the customer is notified** —
+the plan is never paused over one failed day.
 
-**Add-ons** are always charged off-session to the saved card at cutoff, separately
-from the coffee. If an add-on charge fails, the add-ons are dropped but the coffee
-still goes through.
+> **Office (team) coffee** uses the same charge-then-deliver model, but on the
+> **company card** instead of the member's card. Personal and office coffee are
+> never cross-charged. See the [Team Guide](./TEAM_GUIDE.md).
+
+**Add-ons** are always charged off-session to the saved personal card at cutoff,
+separately from the coffee. If an add-on charge fails, the add-ons are dropped but
+the coffee still goes through.
 
 ### How vendors are paid (delivery-gated, "hold then release")
 
@@ -402,7 +411,8 @@ courier's app or website. Polling stops once the order is delivered or failed.
    delivery **days** (any of Mon–Sun); delivery **time**; and the default location.
 
 ### Dashboard
-- **Subscription card** — plan, status, quota remaining, manage link.
+- **Subscription card** — plan, status, and a manage link. Card-on-file plans
+  bill per coffee (no quota shown); legacy prepaid plans show quota remaining.
 - **Upcoming order card** — tomorrow's drink, location, time, add-ons, status, and a
   smart suggestion banner. Actions before cutoff: **Change, Skip, Unskip**.
 - **Live delivery tracking** — while an order is out for delivery, a "Track your
@@ -423,7 +433,8 @@ courier's app or website. Polling stops once the order is delivered or failed.
   usually use. Patterns need ≥3 matching past orders and ≥60% dominance to surface.
 
 ### Billing & account controls
-- Subscribe (Stripe Checkout), see renewal date and quota progress.
+- Subscribe (Stripe Checkout), see renewal date and (on prepaid plans) quota
+  progress.
 - **Pause / Resume** the plan, **Cancel** (ends at period end) / **Keep my plan**.
 
 ### Notifications
@@ -434,24 +445,29 @@ courier's app or website. Polling stops once the order is delivered or failed.
 
 ---
 
-## 12. Corporate / Team Accounts
+## 12. Team (Office) Coffee — Overview
 
-For companies buying coffee for a team under one bill.
+Companies can buy coffee for a whole team on **one company card**. This is a
+distinct product from personal plans and has its **own complete guide** — see
+**[TEAM_GUIDE.md](./TEAM_GUIDE.md)**. In brief:
 
-- **Pricing:** RM199 per seat per month; each member gets their own **22 coffees /
-  month** quota.
-- **Create:** a user creates a corporate account (company name), becoming the
-  billing owner.
-- **Subscribe:** the owner picks a seat count (1–500) and checks out; one Stripe
-  subscription bills `quantity = seats`.
-- **Members:** the owner adds members by email (they must have signed up). Each
-  member gets their own subscription record and independent 22/month quota. Members
-  can be removed (their access ends immediately).
-- **Seats:** adjustable any time (prorated); seat count can't drop below the current
-  member count.
-- **Member experience:** members use the dashboard like personal subscribers (set
-  preferences, locations, modify/skip orders, view history) but **cannot** buy
-  add-ons, change the plan, or pause/cancel billing — that's the owner's control.
+- **No seats, no per-person subscription.** The company pays **per delivered
+  office coffee** on a saved company card (charge-then-deliver), exactly like
+  personal coffee but on the company's card.
+- **Join by code.** The owner shares a join code; staff redeem it to join — no
+  email management. Joining **never touches a member's personal account**.
+- **Personal + office coexist.** A member can hold a personal plan and office
+  membership at once, and even get both coffees on the same day (different cards,
+  no conflict). A non-blocking notice lets them cancel one if they want.
+- **Owner autonomy controls** (server-enforced): one drink for everyone (bundle)
+  vs. each member picks their own (individual); whether members may edit their
+  office coffee; whether they may skip a day.
+- **Vendor Packs (optional savings).** The admin can buy a vendor's discounted
+  multi-coffee pack (plus top-ups for a larger team) instead of per-member
+  coffees — surfaced as an optional nudge, never forced.
+
+Full setup, member experience, billing, failure handling, and packs are all in
+the **[Team Guide](./TEAM_GUIDE.md)**.
 
 ---
 
@@ -602,6 +618,7 @@ The admin portal (`/admin`) lets the BrewPass team run the marketplace:
 
 ---
 
-*This guide reflects the current marketplace build. For the developer-facing product
+*This guide reflects the current marketplace build. For **team / office coffee**,
+see the dedicated [Team Guide](./TEAM_GUIDE.md). For the developer-facing product
 spec, build phases, and engineering conventions, see [CLAUDE.md](./CLAUDE.md) and
 the [README](./README.md).*
