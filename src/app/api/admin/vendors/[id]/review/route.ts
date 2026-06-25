@@ -4,13 +4,16 @@ import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
 import { usersCollection, vendorsCollection } from "@/lib/collections";
+import { marketSchema } from "@/lib/models";
 
 export const runtime = "nodejs";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 const reviewSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("approve") }),
+  // Phase M: the admin confirms the market at approval — pre-filled from the
+  // application's geocode hint, overridable here. Omit to keep the suggestion.
+  z.object({ action: z.literal("approve"), market: marketSchema.optional() }),
   z.object({ action: z.literal("reject"), note: z.string().trim().min(1).max(500) }),
 ]);
 
@@ -43,7 +46,14 @@ export async function POST(request: Request, context: RouteContext) {
   const vendor = await vendors.findOneAndUpdate(
     { _id: new ObjectId(id), status: "pending" },
     input.action === "approve"
-      ? { $set: { status: "active" as const, reviewedAt: now, updatedAt: now } }
+      ? {
+          $set: {
+            status: "active" as const,
+            reviewedAt: now,
+            updatedAt: now,
+            ...(input.market ? { market: input.market } : {}),
+          },
+        }
       : {
           $set: {
             status: "rejected" as const,

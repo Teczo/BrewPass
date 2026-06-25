@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getCurrentAdmin } from "@/lib/admin";
 import { vendorsCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
-import { newDocumentMeta } from "@/lib/models";
+import { marketSchema, newDocumentMeta, suggestMarketFromGeo } from "@/lib/models";
 import type { Vendor } from "@/lib/models";
 
 export const runtime = "nodejs";
@@ -14,6 +14,8 @@ const createVendorSchema = z.object({
   businessName: z.string().trim().min(1).max(120),
   address: z.string().trim().min(5).max(500),
   capacityPerHour: z.number().int().min(1).max(1000),
+  // Phase M: admin is authoritative for market; omit to take the geocode hint.
+  market: marketSchema.optional(),
 });
 
 export async function POST(request: Request) {
@@ -44,6 +46,7 @@ export async function POST(request: Request) {
     ...newDocumentMeta(),
     businessName: parsed.data.businessName,
     status: "active",
+    market: parsed.data.market ?? suggestMarketFromGeo(geocoded.geo),
     address: geocoded.formattedAddress,
     geo: geocoded.geo,
     capabilities: [],

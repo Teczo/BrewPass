@@ -28,6 +28,7 @@ function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
     ...newDocumentMeta(),
     businessName: "Kopi Corner",
     status: "active",
+    market: "MY",
     address: "Jalan Sultan Ismail",
     geo: { lat: 3.14, lng: 101.69 },
     capabilities: [],

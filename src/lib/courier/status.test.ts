@@ -4,7 +4,9 @@ import {
   isForwardTransition,
   isTerminalStatus,
   mapCourierStatus,
+  mapDoorDashDriveStatus,
   mapLalamoveStatus,
+  mapUberDirectStatus,
   priorStatesFor,
   shouldApplyTransition,
 } from "@/lib/courier/status";
@@ -33,6 +35,54 @@ describe("mapLalamoveStatus", () => {
   it("reuses the mapping for grab, and never transitions for manual", () => {
     expect(mapCourierStatus("grab", "COMPLETED")).toBe("delivered");
     expect(mapCourierStatus("manual", "COMPLETED")).toBeNull();
+  });
+});
+
+describe("mapUberDirectStatus (Phase M)", () => {
+  it("maps the Phase M status table onto the Delivery state machine", () => {
+    expect(mapUberDirectStatus("pending")).toBe("pending");
+    expect(mapUberDirectStatus("pickup")).toBe("assigned");
+    expect(mapUberDirectStatus("pickup_complete")).toBe("picked_up");
+    expect(mapUberDirectStatus("dropoff")).toBe("picked_up");
+    expect(mapUberDirectStatus("delivered")).toBe("delivered");
+    expect(mapUberDirectStatus("canceled")).toBe("failed");
+    expect(mapUberDirectStatus("returned")).toBe("failed");
+  });
+
+  it("is case-insensitive and returns null for unknown/info-only statuses", () => {
+    expect(mapUberDirectStatus("DELIVERED")).toBe("delivered");
+    expect(mapUberDirectStatus("en_route")).toBeNull();
+  });
+});
+
+describe("mapDoorDashDriveStatus (Phase M)", () => {
+  it("maps the Phase M status table onto the Delivery state machine", () => {
+    expect(mapDoorDashDriveStatus("created")).toBe("pending");
+    expect(mapDoorDashDriveStatus("confirmed")).toBe("pending");
+    expect(mapDoorDashDriveStatus("enroute_to_pickup")).toBe("assigned");
+    expect(mapDoorDashDriveStatus("arrived_at_pickup")).toBe("assigned");
+    expect(mapDoorDashDriveStatus("picked_up")).toBe("picked_up");
+    expect(mapDoorDashDriveStatus("enroute_to_dropoff")).toBe("picked_up");
+    expect(mapDoorDashDriveStatus("arrived_at_dropoff")).toBe("picked_up");
+    expect(mapDoorDashDriveStatus("delivered")).toBe("delivered");
+    expect(mapDoorDashDriveStatus("cancelled")).toBe("failed");
+  });
+
+  it("treats dropped-off-with-issue as delivered (coffee left the dasher)", () => {
+    expect(mapDoorDashDriveStatus("dasher_dropped_off_with_issue")).toBe("delivered");
+  });
+
+  it("returns null for unknown statuses", () => {
+    expect(mapDoorDashDriveStatus("scheduled")).toBeNull();
+  });
+});
+
+describe("mapCourierStatus dispatches per provider (Phase M)", () => {
+  it("routes each provider to its own mapper", () => {
+    expect(mapCourierStatus("uber_direct", "delivered")).toBe("delivered");
+    expect(mapCourierStatus("uber_direct", "pickup")).toBe("assigned");
+    expect(mapCourierStatus("doordash_drive", "enroute_to_pickup")).toBe("assigned");
+    expect(mapCourierStatus("doordash_drive", "delivered")).toBe("delivered");
   });
 });
 

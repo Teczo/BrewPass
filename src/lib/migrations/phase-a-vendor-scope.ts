@@ -46,6 +46,8 @@ export function cafeToVendor(cafe: LegacyCafe): Vendor {
     ...newDocumentMeta(),
     businessName: cafe.name,
     status: cafe.active ? "active" : "paused",
+    // v1 cafés are the MY operation (Vendor #1 et al.) — Phase M market.
+    market: "MY",
     address: cafe.address,
     geo: { ...cafe.geo },
     capabilities: [...cafe.capabilities],

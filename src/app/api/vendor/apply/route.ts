@@ -5,7 +5,7 @@ import { z } from "zod";
 import { vendorsCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
 import type { Vendor } from "@/lib/models";
-import { newDocumentMeta, operatingHoursSchema } from "@/lib/models";
+import { newDocumentMeta, operatingHoursSchema, suggestMarketFromGeo } from "@/lib/models";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { findVendorForUser } from "@/lib/vendors";
 
@@ -62,6 +62,9 @@ export async function POST(request: Request) {
     businessName: input.businessName,
     address: geocoded.formattedAddress,
     geo: geocoded.geo,
+    // Phase M: geocoded market suggestion; the admin confirms/overrides it at
+    // approval (it is authoritative only once an admin sets it there).
+    market: suggestMarketFromGeo(geocoded.geo),
     operatingHours: input.operatingHours,
     serviceAreaRadiusKm: input.serviceAreaRadiusKm,
     capacityPerHour: input.capacityPerHour,

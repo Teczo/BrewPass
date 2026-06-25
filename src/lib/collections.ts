@@ -6,6 +6,7 @@ import type {
   CorporateAccount,
   CorporateJoinCode,
   CorporateMembership,
+  CourierToken,
   Delivery,
   Location,
   OptionTaxonomy,
@@ -121,6 +122,10 @@ export async function webhookDeliveriesCollection(): Promise<Collection<WebhookD
   return (await getDb()).collection<WebhookDelivery>("webhookDeliveries");
 }
 
+export async function courierTokensCollection(): Promise<Collection<CourierToken>> {
+  return (await getDb()).collection<CourierToken>("courierTokens");
+}
+
 /**
  * Indexes the app relies on. Idempotent — safe to call from a setup script
  * or admin route after provisioning a new database.
@@ -148,6 +153,7 @@ export async function ensureIndexes(): Promise<void> {
     corporateJoinCodes,
     vendorPromotions,
     packPurchases,
+    courierTokens,
   ] = await Promise.all([
     usersCollection(),
     locationsCollection(),
@@ -170,6 +176,7 @@ export async function ensureIndexes(): Promise<void> {
     corporateJoinCodesCollection(),
     vendorPromotionsCollection(),
     packPurchasesCollection(),
+    courierTokensCollection(),
   ]);
 
   await Promise.all([
@@ -229,6 +236,8 @@ export async function ensureIndexes(): Promise<void> {
     signals.createIndex({ orderId: 1 }, { unique: true }),
     // Webhook idempotency: each delivered event is claimed exactly once.
     webhooks.createIndex({ source: 1, eventId: 1 }, { unique: true }),
+    // Phase M — one cached OAuth token per courier provider (Uber Direct).
+    courierTokens.createIndex({ provider: 1 }, { unique: true }),
     // Outbound webhooks (Phase I.5): the dispatcher lists active subscriptions.
     webhookSubscriptions.createIndex({ active: 1 }),
     // Idempotent outbound delivery: one row per (subscription, logical event).

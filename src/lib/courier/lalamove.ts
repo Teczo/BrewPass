@@ -155,7 +155,8 @@ export const lalamoveAdapter: CourierAdapter = {
       : new Date(Date.now() + 5 * 60_000);
     return {
       quotationId: quote.quotationId,
-      feeAmountSen: senFromMyrString(quote.priceBreakdown?.total),
+      feeAmount: senFromMyrString(quote.priceBreakdown?.total),
+      feeCurrency: "MYR",
       expiresAt,
       pickupStopId: quote.stops?.[0]?.stopId,
       dropoffStopId: quote.stops?.[1]?.stopId,

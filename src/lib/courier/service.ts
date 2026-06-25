@@ -7,7 +7,7 @@ import {
   vendorsCollection,
   webhookEventsCollection,
 } from "@/lib/collections";
-import { getCourierAdapter, resolveCourierProvider } from "@/lib/courier";
+import { getCourierAdapter, resolveCourierChain } from "@/lib/courier";
 import { priorStatesFor, shouldApplyTransition } from "@/lib/courier/status";
 import type { CourierWebhookEvent } from "@/lib/courier/types";
 import { newDocumentMeta } from "@/lib/models";
@@ -63,7 +63,12 @@ export async function dispatchForHandoff(
   now: Date = new Date(),
 ): Promise<HandoffOutcome> {
   const deliveries = await deliveriesCollection();
-  const provider = resolveCourierProvider(vendor);
+  // The ordered providers to try (Phase M). One entry for MY (`[lalamove]`),
+  // up to two for AU (`[uber_direct, doordash_drive]`); `[manual]` for
+  // self-delivery vendors. The head is the primary; later entries are the
+  // auto-fallback walked on dispatch failure.
+  const chain = resolveCourierChain(vendor);
+  const primary = chain[0];
 
   // Claim the single delivery for this order. A duplicate means a prior
   // handoff already created it — never dispatch twice.
@@ -72,7 +77,7 @@ export async function dispatchForHandoff(
     if (existing.courierOrderId) {
       return {
         status: "dispatched",
-        provider: existing.courierProvider ?? provider,
+        provider: existing.courierProvider ?? primary,
         trackingUrl: existing.trackingUrl ?? null,
       };
     }
@@ -83,19 +88,13 @@ export async function dispatchForHandoff(
     // mid-flight) — fall through and (re)dispatch onto it.
   }
 
-  if (provider === "manual") {
+  if (primary === "manual") {
     await insertManualDelivery(order._id, now);
     return { status: "manual" };
   }
 
-  const adapter = getCourierAdapter(provider);
-  if (!adapter) {
-    // Shouldn't happen (resolveCourierProvider only returns configured
-    // providers), but fail closed to the chosen policy rather than stall.
-    return { status: "failed", reason: "no_adapter" };
-  }
-
-  // Ensure a pending courier delivery row exists to attach refs to.
+  // Ensure a pending courier delivery row exists to attach refs to. Stamped
+  // with the primary; the actual provider that wins dispatch is written below.
   if (!existing) {
     try {
       await deliveries.insertOne({
@@ -103,7 +102,7 @@ export async function dispatchForHandoff(
         ...newDocumentMeta(),
         orderId: order._id,
         status: "pending",
-        courierProvider: provider,
+        courierProvider: primary,
         createdAt: now,
         updatedAt: now,
       });
@@ -114,7 +113,7 @@ export async function dispatchForHandoff(
       if (raced?.courierOrderId) {
         return {
           status: "dispatched",
-          provider: raced.courierProvider ?? provider,
+          provider: raced.courierProvider ?? primary,
           trackingUrl: raced.trackingUrl ?? null,
         };
       }
@@ -131,45 +130,58 @@ export async function dispatchForHandoff(
   const drink = { description: `${order.drink.size} ${order.drink.drink}` };
 
   let lastError = "dispatch_failed";
-  for (let attempt = 1; attempt <= MAX_DISPATCH_ATTEMPTS; attempt += 1) {
-    try {
-      // Re-quote at dispatch time — quotations are short-lived (~5 min).
-      const quote = await adapter.getQuote(pickup, dropoff, drink);
-      const result = await adapter.dispatch(
-        quote,
-        pickup,
-        dropoff,
-        contacts,
-        `dispatch_${order._id.toHexString()}`,
-      );
-      await deliveries.updateOne(
-        { orderId: order._id },
-        {
-          $set: {
-            status: "assigned",
-            courierProvider: provider,
-            courierOrderId: result.courierOrderId,
-            courierQuotationId: quote.quotationId,
-            courierFeeAmountSen: quote.feeAmountSen,
-            trackingUrl: result.trackingUrl ?? undefined,
-            dispatchedAt: now,
-            assignedAt: now,
-            updatedAt: now,
-          },
-        },
-      );
-      return { status: "dispatched", provider, trackingUrl: result.trackingUrl };
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : "dispatch_failed";
-      console.error(
-        `Courier dispatch attempt ${attempt}/${MAX_DISPATCH_ATTEMPTS} for order ${order._id.toHexString()} failed:`,
-        error,
-      );
-      if (attempt < MAX_DISPATCH_ATTEMPTS) await sleep(DISPATCH_RETRY_DELAY_MS);
+  // Walk the chain: each provider gets its own retry budget; a provider that
+  // exhausts its retries hands off to the next (AU auto-fallback). The fallback
+  // policy lives in `resolveCourierChain`, not in the adapters (rule #23).
+  for (const provider of chain) {
+    const adapter = getCourierAdapter(provider);
+    if (!adapter) {
+      lastError = "no_adapter";
+      continue;
     }
+
+    for (let attempt = 1; attempt <= MAX_DISPATCH_ATTEMPTS; attempt += 1) {
+      try {
+        // Re-quote at dispatch time — quotations are short-lived (~5 min).
+        const quote = await adapter.getQuote(pickup, dropoff, drink);
+        const result = await adapter.dispatch(
+          quote,
+          pickup,
+          dropoff,
+          contacts,
+          `dispatch_${order._id.toHexString()}`,
+        );
+        await deliveries.updateOne(
+          { orderId: order._id },
+          {
+            $set: {
+              status: "assigned",
+              courierProvider: provider,
+              courierOrderId: result.courierOrderId,
+              courierQuotationId: quote.quotationId,
+              courierFeeAmount: quote.feeAmount,
+              courierFeeCurrency: quote.feeCurrency,
+              trackingUrl: result.trackingUrl ?? undefined,
+              dispatchedAt: now,
+              assignedAt: now,
+              updatedAt: now,
+            },
+          },
+        );
+        return { status: "dispatched", provider, trackingUrl: result.trackingUrl };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : "dispatch_failed";
+        console.error(
+          `Courier dispatch (${provider}) attempt ${attempt}/${MAX_DISPATCH_ATTEMPTS} for order ${order._id.toHexString()} failed:`,
+          error,
+        );
+        if (attempt < MAX_DISPATCH_ATTEMPTS) await sleep(DISPATCH_RETRY_DELAY_MS);
+      }
+    }
+    // This provider is exhausted — fall back to the next in the chain.
   }
 
-  // Out of retries — mark the delivery failed; the caller fails + refunds.
+  // The whole chain failed — mark the delivery failed; the caller fails + refunds.
   await deliveries.updateOne(
     { orderId: order._id },
     {

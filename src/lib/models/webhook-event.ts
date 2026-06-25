@@ -11,7 +11,7 @@ import { objectIdSchema } from "@/lib/models/shared";
  */
 export const webhookEventSchema = z.object({
   _id: objectIdSchema,
-  source: z.enum(["stripe", "lalamove", "grab"]),
+  source: z.enum(["stripe", "lalamove", "grab", "uber_direct", "doordash_drive"]),
   eventId: z.string().min(1),
   type: z.string().min(1),
   receivedAt: z.date(),
