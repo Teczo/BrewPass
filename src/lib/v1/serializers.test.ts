@@ -30,6 +30,7 @@ function makeVendor(): Vendor {
     tenantId: DEFAULT_TENANT_ID,
     businessName: "Kopi Corner",
     status: "active",
+    market: "MY",
     address: "Jalan Sultan Ismail, KL",
     geo: { lat: 3.14, lng: 101.69 },
     capabilities: [],

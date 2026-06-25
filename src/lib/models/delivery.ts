@@ -12,13 +12,29 @@ export const deliveryStatusSchema = z.enum([
 export type DeliveryStatus = z.infer<typeof deliveryStatusSchema>;
 
 /**
- * Who carries the order (v2.1). `lalamove`/`grab` are courier-dispatched and
- * webhook-gated; `manual` is the legacy self-delivery path (free-text rider,
- * human "mark delivered" button). Legacy rows that predate v2.1 have no value
- * and are treated as `manual` — see `deliveryProvider()`.
+ * Who carries the order. `lalamove`/`grab` serve the MY market;
+ * `uber_direct`/`doordash_drive` serve the AU market (Phase M) — all are
+ * courier-dispatched and webhook-gated. `manual` is the legacy self-delivery
+ * path (free-text rider, human "mark delivered" button). Legacy rows that
+ * predate v2.1 have no value and are treated as `manual` — see
+ * `deliveryProvider()`.
  */
-export const courierProviderSchema = z.enum(["lalamove", "grab", "manual"]);
+export const courierProviderSchema = z.enum([
+  "lalamove",
+  "grab",
+  "uber_direct",
+  "doordash_drive",
+  "manual",
+]);
 export type CourierProvider = z.infer<typeof courierProviderSchema>;
+
+/**
+ * Currency a courier fee is denominated in (Phase M). MY fees are MYR, AU fees
+ * are AUD; the currency always travels with the amount (never assume MYR for a
+ * courier amount). Minor units are sen (MYR) / cents (AUD).
+ */
+export const courierFeeCurrencySchema = z.enum(["MYR", "AUD"]);
+export type CourierFeeCurrency = z.infer<typeof courierFeeCurrencySchema>;
 
 export const deliverySchema = baseDocumentSchema.extend({
   orderId: objectIdSchema,
@@ -55,11 +71,14 @@ export const deliverySchema = baseDocumentSchema.extend({
   driverLocationUpdatedAt: z.date().optional(),
 
   /**
-   * What the platform paid the courier, in sen — an INTERNAL margin figure.
-   * Never shown to the user as a charge, never deducted from the vendor net
-   * (critical rule #7).
+   * What the platform paid the courier, in minor units (sen/cents) — an
+   * INTERNAL margin figure. Never shown to the user as a charge, never deducted
+   * from the vendor net (critical rule #7). Renamed from `courierFeeAmountSen`
+   * in Phase M now that fees may be AUD; read `courierFeeCurrency` for the unit.
    */
-  courierFeeAmountSen: moneySenSchema.optional(),
+  courierFeeAmount: moneySenSchema.optional(),
+  /** Currency of `courierFeeAmount` (Phase M). MY → MYR, AU → AUD. */
+  courierFeeCurrency: courierFeeCurrencySchema.optional(),
 });
 export type Delivery = z.infer<typeof deliverySchema>;
 

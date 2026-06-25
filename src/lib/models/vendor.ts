@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { courierProviderSchema, type CourierFeeCurrency } from "@/lib/models/delivery";
 import {
   baseDocumentSchema,
   geoPointSchema,
@@ -8,6 +9,34 @@ import {
   objectIdSchema,
   weekdaySchema,
 } from "@/lib/models/shared";
+
+/**
+ * The operating market a vendor belongs to (Phase M). Selects which courier
+ * adapters and currency apply. `MY` (Malaysia, MYR) is the launch market;
+ * `AU` (Australia / Perth, AUD) is added behind the same `CourierAdapter`
+ * interface. Geocoded at onboarding to suggest a default; the admin sets it
+ * authoritatively at approval (pre-filled from geocode, overridable).
+ */
+export const marketSchema = z.enum(["MY", "AU"]);
+export type Market = z.infer<typeof marketSchema>;
+
+/** The fee currency each market is billed in (Phase M). */
+export const MARKET_CURRENCY: Record<Market, CourierFeeCurrency> = {
+  MY: "MYR",
+  AU: "AUD",
+};
+
+/**
+ * Coarse geocode → market suggestion (Phase M). Australia is the only AU-market
+ * territory and sits entirely in the southern hemisphere, so a negative
+ * latitude is a reliable AU signal versus Malaysia's northern coordinates.
+ * This only *suggests* a default at onboarding — the admin confirms/overrides
+ * the authoritative `market` at approval, so the heuristic never needs to be
+ * exhaustive.
+ */
+export function suggestMarketFromGeo(geo: { lat: number }): Market {
+  return geo.lat < 0 ? "AU" : "MY";
+}
 
 /**
  * Optional per-hour delivery caps (Phase F). Each entry caps orders whose
@@ -76,6 +105,12 @@ export const vendorSchema = baseDocumentSchema.extend({
    */
   ownerUserId: objectIdSchema.optional(),
   status: vendorStatusSchema,
+  /**
+   * Operating market (Phase M) — selects the courier adapters and currency for
+   * this vendor's handoffs. Geocoded default at onboarding, admin-authoritative
+   * at approval. Existing vendors are backfilled to `MY` (Phase M migration).
+   */
+  market: marketSchema,
   address: z.string().min(1),
   geo: geoPointSchema,
   /**
@@ -173,10 +208,11 @@ export const vendorSchema = baseDocumentSchema.extend({
    */
   payoutCadence: z.enum(["per_order", "daily_batch"]).optional(),
   /**
-   * Courier provider for this vendor's handoffs (v2.1). Unset → the configured
-   * platform primary (Lalamove) when it's available, else `manual`. `manual`
-   * is for vendors who self-deliver. Resolved by `resolveCourierProvider()`.
+   * Courier provider override for this vendor's handoffs. Unset → the vendor's
+   * market primary (Lalamove for MY, Uber Direct for AU) when available, with
+   * AU auto-fallback; else `manual`. `manual` is for vendors who self-deliver.
+   * Resolved by `resolveCourierProvider()` / `resolveCourierChain()`.
    */
-  courierProvider: z.enum(["lalamove", "grab", "manual"]).optional(),
+  courierProvider: courierProviderSchema.optional(),
 });
 export type Vendor = z.infer<typeof vendorSchema>;

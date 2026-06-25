@@ -30,8 +30,13 @@ export interface CourierDrinkMeta {
 
 export interface CourierQuote {
   quotationId: string;
-  /** Courier fee in sen (MYR) — a platform cost, never charged to the user. */
-  feeAmountSen: number;
+  /**
+   * Courier fee in minor units (sen/cents) — a platform cost, never charged to
+   * the user. The currency always travels with it (Phase M: AU fees are AUD).
+   */
+  feeAmount: number;
+  /** Currency of `feeAmount` — `"MYR"` for MY couriers, `"AUD"` for AU. */
+  feeCurrency: import("@/lib/models").CourierFeeCurrency;
   /** Quotes are short-lived (Lalamove ~5 min); re-quote past this. */
   expiresAt: Date;
   /** Provider stop handles needed to place the order against this quote. */

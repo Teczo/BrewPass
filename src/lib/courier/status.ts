@@ -67,8 +67,58 @@ export function mapLalamoveStatus(raw: string): DeliveryStatus | null {
   }
 }
 
-/** Provider-dispatching status mapper. Grab maps onto the same neutral states
- * when its adapter lands; until then only Lalamove is wired. */
+/** Uber Direct (AU primary, Phase M) delivery statuses → Delivery state, or
+ * null for info-only states. Mapping per the Phase M status table. */
+export function mapUberDirectStatus(raw: string): DeliveryStatus | null {
+  switch (raw.toLowerCase()) {
+    case "pending":
+      return "pending";
+    case "pickup":
+      return "assigned";
+    case "pickup_complete":
+    case "dropoff":
+      return "picked_up";
+    case "delivered":
+      return "delivered";
+    case "canceled":
+    case "cancelled":
+    case "returned":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
+/** DoorDash Drive Classic (AU fallback, Phase M) delivery statuses → Delivery
+ * state, or null for info-only states. Mapping per the Phase M status table;
+ * `dasher_dropped_off_with_issue` counts as delivered (the coffee left the
+ * dasher's hands) — the adapter stores the raw status for admin review. Event
+ * names are confirmed against the granted Drive Classic API surface. */
+export function mapDoorDashDriveStatus(raw: string): DeliveryStatus | null {
+  switch (raw.toLowerCase()) {
+    case "created":
+    case "confirmed":
+      return "pending";
+    case "enroute_to_pickup":
+    case "arrived_at_pickup":
+      return "assigned";
+    case "picked_up":
+    case "enroute_to_dropoff":
+    case "arrived_at_dropoff":
+      return "picked_up";
+    case "delivered":
+    case "dasher_dropped_off_with_issue":
+      return "delivered";
+    case "cancelled":
+    case "canceled":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
+/** Provider-dispatching status mapper. Each courier translates its own status
+ * vocabulary onto the neutral state machine; the adapter owns the detail. */
 export function mapCourierStatus(provider: CourierProvider, raw: string): DeliveryStatus | null {
   switch (provider) {
     case "lalamove":
@@ -76,6 +126,10 @@ export function mapCourierStatus(provider: CourierProvider, raw: string): Delive
       // Grab's status vocabulary is close enough to reuse for now; the Grab
       // adapter can override this when its exact statuses are confirmed.
       return mapLalamoveStatus(raw);
+    case "uber_direct":
+      return mapUberDirectStatus(raw);
+    case "doordash_drive":
+      return mapDoorDashDriveStatus(raw);
     case "manual":
       return null;
   }
