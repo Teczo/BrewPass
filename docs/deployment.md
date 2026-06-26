@@ -1,10 +1,11 @@
 # BrewPass — Production Deployment Guide (v2 Marketplace)
 
 This guide covers the **v2 multi-vendor marketplace** (including the **v2.1**
-courier + AI-menu additions and the **v2.2** corporate-teams, vendor-promotions
-and service-boundary additions). It supersedes the single-vendor v1 guide: v2
-adds a vendor portal, an order-routing engine, a standardized menu taxonomy,
-the AI vendor recommender, monthly lists, and **Stripe Connect** payouts;
+courier + AI-menu additions, the **v2.2** corporate-teams, vendor-promotions
+and service-boundary additions, **v2.3** Perth AU courier adapters, and the
+**L.1/L.2** consolidated-delivery foundation). It supersedes the single-vendor
+v1 guide: v2 adds a vendor portal, an order-routing engine, a standardized menu
+taxonomy, the AI vendor recommender, monthly lists, and **Stripe Connect** payouts;
 v2.1 adds **courier-integrated delivery + in-app tracking** (§6b) and
 **AI-assisted menu onboarding** (folded into §9b); **v2.2** adds:
 
@@ -20,11 +21,25 @@ v2.1 adds **courier-integrated delivery + in-app tracking** (§6b) and
   reserved `tenantId`, and signed outbound lifecycle webhooks (§14). All
   additive — no existing behaviour changes.
 
+**v2.3** adds:
+
+- **Perth (AU) courier adapters (Phase M)** — **Uber Direct** as the AU-market
+  primary courier and **DoorDash Drive Classic** as automatic fallback, behind
+  the same `CourierAdapter` interface as Lalamove. The `Vendor.market` field
+  (`"MY"` | `"AU"`) and per-delivery `courierFeeCurrency` (`"MYR"` | `"AUD"`)
+  are introduced. All new env vars are in §6c. Additive — no change to the
+  delivery state machine, charging, payout, or refund logic. MY behaviour
+  unchanged (§6b).
+- **Consolidated delivery foundation (Phase L.1/L.2)** — the `DeliveryRun`
+  model groups multiple orders into one physical delivery drop. Single-vendor
+  delivery is unaffected (the run is optional). L.3 multi-stop courier dispatch
+  remains parked. No new env vars.
+
 If you ran the v1 deployment already, the new pieces are §4b (Connect),
-§4c (company card), §6b (courier), §9b (Anthropic), the crons in §2, the
-corporate/promotions/webhook sections (§13–§14), and the first-run
-**migrations** in §10 — skim those and skip the rest. All of v2.1/v2.2 is
-optional and degrades to the prior behaviour when unconfigured.
+§4c (company card), §6b (courier), §6c (AU couriers), §9b (Anthropic), the
+crons in §2, the corporate/promotions/webhook sections (§13–§14), and the
+first-run **migrations** in §10 — skim those and skip the rest. All of
+v2.1/v2.2/v2.3 is optional and degrades to the prior behaviour when unconfigured.
 
 One Vercel project hosts everything (frontend pages, API routes, cron
 jobs). Every other service is SaaS you configure once and connect via
@@ -42,7 +57,8 @@ Architecture recap:
 | Company card (corporate)         | Stripe               | §4c                           |
 | Push notifications               | Firebase (FCM)       | §5                            |
 | Geocoding, routing + map         | Google Maps Platform | §6                            |
-| Courier delivery (optional)      | Lalamove             | §6b                           |
+| Courier delivery MY (optional)   | Lalamove             | §6b                           |
+| Courier delivery AU (optional)   | Uber Direct / DoorDash Drive | §6c                   |
 | SMS (optional)                   | Twilio               | §7                            |
 | Email (optional)                 | Resend               | §8                            |
 | Error monitoring                 | Sentry               | §9                            |
@@ -93,8 +109,10 @@ v2 adds several collections (`vendors`, `optionTaxonomy`, `vendorMenuItems`,
 (`corporateAccounts`, `corporateMemberships`, `corporateJoinCodes`), promotions
 (`vendorPromotions`, `packPurchases`), and webhook (`webhookSubscriptions`,
 `webhookDeliveries`) collections, plus the reserved `externalId`/`tenantId`
-fields on every entity. You don't create any of them by hand — they're
-provisioned with their indexes by **Set up DB indexes** in §10.
+fields on every entity. v2.3 adds `courierTokens` (OAuth token cache for Uber
+Direct) and `deliveryRuns` (consolidated delivery groups). You don't create any
+of them by hand — they're provisioned with their indexes by **Set up DB indexes**
+in §10.
 
 ## 2. Vercel (frontend + backend + cron)
 
@@ -413,6 +431,118 @@ to handoff, confirm a courier order is created, then POST a signed
 `delivered` event to the webhook and confirm the payout released; POST a
 `failed` event on another order and confirm the refund.
 
+## 6c. Courier delivery AU — Uber Direct + DoorDash Drive Classic (optional, Phase M)
+
+AU-market vendors (`Vendor.market = "AU"`) dispatch via **Uber Direct** (primary)
+with **DoorDash Drive Classic** as automatic fallback on dispatch failure, all
+through the same `CourierAdapter` interface and delivery state machine as Lalamove.
+**Purely additive** — no change to charging, payout, refund, or MY-market behaviour.
+
+Both adapters are **dormant until their env vars are set** (`isConfigured()` returns
+false). A vendor with no AU courier configured stays on the manual path, exactly
+like an unconfigured Lalamove vendor.
+
+### Vendor.market
+
+Every vendor has a `market` field (`"MY"` | `"AU"`, required). It is
+**geocoded at application time** (the apply route suggests a default based on
+the vendor's country) and **set authoritatively by the admin at approval** (the
+review route accepts it as an admin-overridable field). The routing engine uses
+`market` to resolve which courier adapter chain to use.
+
+```
+# No new env var for market — it is a per-vendor data field, not a deployment setting.
+```
+
+### Uber Direct (AU primary)
+
+Uber Direct uses **OAuth 2.0 Client Credentials**. The token is cached in the
+`courierTokens` collection (keyed by provider) and refreshed on expiry before
+each dispatch — no extra infrastructure needed.
+
+1. Apply for Uber for Business developer access → Delivery API approval →
+   obtain `client_id`, `client_secret`, `customer_id`.
+   Use the **sandbox** first: https://developer.uber.com/docs/deliveries
+2. In the Uber Developer Dashboard register the status webhook:
+   - URL: `https://<domain>/api/webhooks/courier/uber_direct`
+   - Key events: `delivery.status.changed`, `delivery.courier.updated`
+   - Copy the webhook signing secret.
+
+```
+UBER_DIRECT_CLIENT_ID=...
+UBER_DIRECT_CLIENT_SECRET=...
+UBER_DIRECT_CUSTOMER_ID=...
+UBER_DIRECT_BASE_URL=https://api.uber.com/v1   # prod; sandbox: https://sandbox-api.uber.com/v1
+UBER_DIRECT_WEBHOOK_SECRET=...
+```
+
+The adapter is configured when all four non-`BASE_URL` vars are set. `BASE_URL`
+defaults to sandbox — **swap to prod before going live.**
+
+### DoorDash Drive Classic (AU fallback — scaffold only)
+
+The DoorDash adapter is built but **intentionally left dormant**: AU sandbox
+access requires DoorDash Support to enable it per account, and the exact API
+surface (Drive Classic vs standard Drive) must be confirmed before implementing
+the live request path. Confirm with DoorDash Support first; then set:
+
+```
+DOORDASH_DRIVE_DEVELOPER_ID=...
+DOORDASH_DRIVE_KEY_ID=...
+DOORDASH_DRIVE_SIGNING_SECRET=...
+DOORDASH_DRIVE_BASE_URL=https://openapi.doordash.com   # confirm with DoorDash Support
+DOORDASH_DRIVE_WEBHOOK_SECRET=...
+```
+
+Register the webhook in the DoorDash developer dashboard:
+- URL: `https://<domain>/api/webhooks/courier/doordash_drive`
+- Key events: `delivery_status` events (confirm exact names from DoorDash Support)
+
+Until these vars are set `isConfigured()` returns false — no DoorDash calls are
+made in any environment.
+
+### AU dispatch model
+
+- Platform-controlled primary-with-auto-fallback: Uber Direct is tried first; on
+  dispatch failure the platform automatically retries with DoorDash Drive Classic.
+  AU vendors do **not** choose their courier.
+- No real-time quoting at cutoff (quote is fetched at dispatch time, same as
+  Lalamove).
+- Courier fee is always a platform cost — never charged to the user or deducted
+  from vendor payout — recorded with `courierFeeCurrency = "AUD"`.
+
+### Courier fee currency
+
+The `Delivery` entity now stores:
+- `courierFeeAmount` (integer minor units — cents for AUD, sen for MYR)
+- `courierFeeCurrency` (`"MYR"` | `"AUD"`)
+
+No migration needed — there are no pre-existing `Delivery` records. The old field
+name `courierFeeAmountSen` has been renamed and is no longer used.
+
+### Testing
+
+Test each adapter in sandbox before enabling in production:
+- Uber Direct sandbox: push an AU vendor's order to handoff → a courier order
+  is created; POST a signed `delivery.status.changed` (`delivered`) event to
+  `/api/webhooks/courier/uber_direct` → payout releases; `canceled` → refund.
+- DoorDash: wire sandbox after DoorDash Support grants AU access and confirms
+  the API surface.
+
+### Go-live checklist (AU)
+
+- [ ] Uber Direct production API access granted and tested in sandbox
+- [ ] `UBER_DIRECT_BASE_URL` switched to prod URL
+- [ ] Uber Direct webhook URL registered in the Uber developer dashboard with
+      signing secret matching `UBER_DIRECT_WEBHOOK_SECRET`
+- [ ] DoorDash Drive Classic AU sandbox enabled by DoorDash Support; API surface
+      confirmed; adapter live request path implemented and tested
+- [ ] DoorDash webhook URL registered; `DOORDASH_DRIVE_WEBHOOK_SECRET` set
+- [ ] At least one AU-market vendor (`market = "AU"`) exists with a published
+      menu and Connect account
+- [ ] Confirm consolidated delivery (L.1/L.2) admin flow works for AU vendors
+      (if in use)
+
 ## 7. Twilio (optional — delivery SMS)
 
 1. https://console.twilio.com → get Account SID + Auth Token, buy/claim
@@ -527,10 +657,18 @@ exist:
 (There is no separate Phase K migration — promotions/packs are additive
 collections provisioned by **Set up DB indexes**.)
 
+**v2.3 data migration (Phase M — admin API call):**
+
+- `POST /api/admin/migrations/phase-m` — **Phase M**: backfills `market = "MY"`
+  on every existing vendor that has no `market` set. Safe and reversible (
+  `{"direction":"down"}` clears the field). Run this before onboarding AU vendors
+  so the market field is consistent. Admin can override each vendor's market via
+  the approval/review form.
+
 Rollback (any migration) is a deliberate API call, not a button:
 `POST /api/admin/migrations/phase-a` (or `phase-c` / `phase-i` / `phase-j` /
-`phase-j2` / `phase-j7`) with `{"direction":"down"}` as admin — use it only
-together with a rollback to the matching code.
+`phase-j2` / `phase-j7` / `phase-m`) with `{"direction":"down"}` as admin —
+use it only together with a rollback to the matching code.
 
 ### Standing up Vendor #1 / new vendors
 
@@ -585,10 +723,18 @@ https://<domain>/api/cron/generate-orders` → JSON summary
       produced **no** transfer
 - [ ] Dispute path: trigger a test `charge.dispute.created` and confirm the
       user refund + transfer reversal
-- [ ] Courier (if configured): set a vendor to `lalamove`, push an order to
+- [ ] Courier MY (if configured): set a vendor to `lalamove`, push an order to
       handoff → a courier order is created; POST a signed `delivered` event
       to `/api/webhooks/courier/lalamove` → payout releases; a `failed`
       event on another order → the day is refunded
+- [ ] Courier AU (§6c, if `UBER_DIRECT_*` vars set): set a vendor to `market:
+      "AU"`, push to handoff → Uber Direct courier order created; POST a signed
+      `delivery.status.changed` (`delivered`) to
+      `/api/webhooks/courier/uber_direct` → payout releases; `canceled` → refund.
+      Confirm DoorDash fallback triggers when Uber dispatch fails.
+- [ ] Phase M migration: run `POST /api/admin/migrations/phase-m` and confirm
+      existing vendors have `market = "MY"`; confirm a new AU vendor application
+      pre-fills the market suggestion correctly
 - [ ] AI menu onboarding (if `ANTHROPIC_API_KEY` set): upload a menu
       screenshot at `/vendor/menu`, review the extracted draft, confirm, and
       see the items published (and that with the key unset it cleanly tells
@@ -635,9 +781,11 @@ https://<domain>/api/cron/generate-orders` → JSON summary
   share webhook secrets between environments. Re-run the §10 admin setup on
   each new database.
 - **Courier delivery**: for courier vendors, delivery is confirmed by the
-  signed courier webhook (§6b), which gates payout. When the courier
+  signed courier webhook (§6b/§6c), which gates payout. When the courier
   completes but the webhook never lands, use the `/admin` order tools to
   **force-deliver** (releases payout once) or **re-dispatch** a stuck order.
+  For AU vendors the platform auto-falls back Uber Direct → DoorDash on dispatch
+  failure; you can still force-deliver or re-dispatch from admin if both fail.
 - **Mobile apps**: see `docs/mobile.md` once the web deployment is stable —
   the same web build (now including the vendor and tracking UIs) loads in
   the shell.
@@ -715,3 +863,33 @@ service to provision**.
     Until then events are **enqueued but only delivered on a manual run** —
     acceptable with no external subscribers, **not** acceptable once an
     integration depends on timely events.
+
+## 15. Consolidated delivery foundation (Phase L.1/L.2)
+
+**No new infrastructure and no new env vars.** The `DeliveryRun` model and
+`deliveryRuns` collection are provisioned by **Set up DB indexes** (§10).
+
+- **What it is.** A `DeliveryRun` groups N orders (across different vendors) into
+  one physical delivery drop: shared `dropLocation`, `targetDeliveryTime`, and an
+  ordered list of `pickupStops` (one per vendor). The `courierRunId` field is
+  reserved for a future multi-stop courier job (Phase L.3) but is unpopulated now.
+- **Single-vendor delivery is unaffected.** `Order.deliveryRunId` is optional; an
+  order with no run proceeds exactly as before.
+- **Run composition guards (rule #22):** a run requires ≥2 orders, no Pack orders,
+  one shared drop location, no orders already in another run, and all orders must
+  be in a deliverable state. These are enforced by `createDeliveryRun`.
+- **Per-order money path — unchanged.** A run is purely a delivery grouping.
+  Charging, payout, and refund stay strictly per-order. Run status is *derived*
+  from member orders' statuses (`completed` / `partially_failed` / `failed` /
+  `planned` / `dispatched`) — it is never a gate on any order's money path.
+- **Partial failure.** If one order in a run fails delivery, only that order is
+  refunded (auto-refund, per-order, exactly as today). The rest pay out normally.
+- **L.3 / L.4 status.** Multi-stop courier dispatch (L.3) and hot-coffee logistics
+  rules (L.4) remain parked pending multi-stop courier capability validation (no
+  current adapter supports it). Do not attempt to activate multi-stop dispatch
+  until confirmed — L.3 is gated on a provider actually supporting multi-stop
+  pickup in-market. AU market launches single-vendor-per-delivery only.
+
+**Admin visibility:** the `deliveryRuns` collection is queryable via Atlas; no
+dedicated admin screen yet. Per-order states visible in the existing `/admin`
+order table remain the operational signal.
