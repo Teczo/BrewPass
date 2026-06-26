@@ -1,4 +1,5 @@
 import type {
+  DeliveryRun,
   Location,
   MonthlyList,
   Order,
@@ -215,7 +216,34 @@ export function webhookSubscriptionToJson(sub: WebhookSubscription) {
   };
 }
 
+/**
+ * Phase L.1 — a consolidated delivery run for ops/API. Exposes the stable
+ * `externalId` (never raw `_id`, rule #14) plus the per-vendor pickup stops and
+ * the aggregate status. Each order is still tracked/charged/paid individually.
+ */
+export function deliveryRunToJson(run: DeliveryRun) {
+  return {
+    id: run._id.toHexString(),
+    externalId: run.externalId,
+    status: run.status,
+    orderIds: run.orderIds.map((id) => id.toHexString()),
+    dropLocation: {
+      label: run.dropLocation.label,
+      address: run.dropLocation.address,
+      geo: run.dropLocation.geo,
+    },
+    targetDeliveryTime: run.targetDeliveryTime.toISOString(),
+    pickupStops: run.pickupStops.map((stop) => ({
+      vendorId: stop.vendorId.toHexString(),
+      orderIds: stop.orderIds.map((id) => id.toHexString()),
+    })),
+    courierRunId: run.courierRunId ?? null,
+    corporateAccountId: run.corporateAccountId?.toHexString() ?? null,
+  };
+}
+
 export type UserJson = ReturnType<typeof userToJson>;
+export type DeliveryRunJson = ReturnType<typeof deliveryRunToJson>;
 export type MonthlyListJson = ReturnType<typeof monthlyListToJson>;
 export type SubscriptionJson = ReturnType<typeof subscriptionToJson>;
 export type OrderJson = ReturnType<typeof orderToJson>;

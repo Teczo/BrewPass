@@ -105,6 +105,14 @@ export const orderSchema = baseDocumentSchema.extend({
   /** Vendors that declined this order — excluded from re-routing so a
    * decline can't bounce back to the same vendor. */
   declinedVendorIds: z.array(objectIdSchema).optional(),
+  /**
+   * Phase L.1 — the consolidated `DeliveryRun` this order is delivered with, if
+   * any. Optional and additive: ordinary single-vendor orders carry no run and
+   * are delivered, charged, and paid exactly as before. The run is only the
+   * DELIVERY grouping — it never changes this order's per-vendor charge/payout
+   * path, which stays gated and confirmed per-order (critical rule #22).
+   */
+  deliveryRunId: objectIdSchema.optional(),
   status: orderStatusSchema,
   /** Price snapshot in sen (MYR). Set when the order is generated/confirmed.
    * This is the gross the subscriber is charged for the coffee at cutoff. */

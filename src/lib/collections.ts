@@ -8,6 +8,7 @@ import type {
   CorporateMembership,
   CourierToken,
   Delivery,
+  DeliveryRun,
   Location,
   OptionTaxonomy,
   MonthlyList,
@@ -86,6 +87,10 @@ export async function deliveriesCollection(): Promise<Collection<Delivery>> {
   return (await getDb()).collection<Delivery>("deliveries");
 }
 
+export async function deliveryRunsCollection(): Promise<Collection<DeliveryRun>> {
+  return (await getDb()).collection<DeliveryRun>("deliveryRuns");
+}
+
 export async function vendorPromotionsCollection(): Promise<Collection<VendorPromotion>> {
   return (await getDb()).collection<VendorPromotion>("vendorPromotions");
 }
@@ -145,6 +150,7 @@ export async function ensureIndexes(): Promise<void> {
     menuItems,
     menuDrafts,
     deliveries,
+    deliveryRuns,
     signals,
     webhooks,
     webhookSubscriptions,
@@ -168,6 +174,7 @@ export async function ensureIndexes(): Promise<void> {
     vendorMenuItemsCollection(),
     vendorMenuDraftsCollection(),
     deliveriesCollection(),
+    deliveryRunsCollection(),
     preferenceSignalsCollection(),
     webhookEventsCollection(),
     webhookSubscriptionsCollection(),
@@ -230,6 +237,13 @@ export async function ensureIndexes(): Promise<void> {
     deliveries.createIndex(
       { courierOrderId: 1 },
       { partialFilterExpression: { courierOrderId: { $exists: true } } },
+    ),
+    // Phase L.1 — consolidated delivery runs. Status/ops dashboards list runs by
+    // status; the API boundary resolves a run by its stable externalId.
+    deliveryRuns.createIndex({ status: 1 }),
+    deliveryRuns.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
     ),
     signals.createIndex({ userId: 1, date: 1 }),
     // One preference signal per confirmed order.
