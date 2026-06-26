@@ -336,21 +336,40 @@ signature-verified and de-duplicated** so retried or out-of-order events are saf
 
 ---
 
-## 10. Delivery & Live Tracking (v2.1)
+## 10. Delivery & Live Tracking (v2.1 + v2.3)
 
 Delivery is a first-class, platform-dispatched step — not a manual stub.
+
+### Courier adapters by market
+
+BrewPass operates in two markets, each with its own courier stack:
+
+| Market | Primary | Fallback | Notes |
+|--------|---------|----------|-------|
+| **Malaysia (MY)** | Lalamove | manual | Fully live |
+| **Australia (AU)** | Uber Direct | DoorDash Drive Classic | AU launch — Perth CBD confirmed coverage |
+
+The market is set on each **Vendor** (`market: "MY"` or `"AU"`), confirmed by the
+admin at approval. The platform automatically resolves the correct courier chain
+for each dispatch — vendors do not choose their courier in the AU market.
+
+The **courier fee** (platform cost, a few dollars per delivery) is recorded in the
+currency of the market (`MYR` for MY, `AUD` for AU) and is **never charged to the
+subscriber and never deducted from the vendor's payout** — it's an internal margin
+line item.
 
 ### Courier dispatch
 
 - When a vendor hits **"Ready — hand off,"** the platform requests a real-time quote
   from the courier (vendor → subscriber route) and **dispatches a courier order**.
-  The primary courier is **Lalamove** (Malaysia); **Grab** is planned as a second
-  adapter behind the same courier abstraction.
-- **Self-delivery fallback:** a vendor can keep delivering with their own rider via
-  the legacy **manual** path. Each vendor's delivery provider resolves as:
-  `manual` (always self-deliver) · unset (use the platform's Lalamove if configured,
-  else manual) · `lalamove`/`grab` (use that provider if its adapter is configured,
-  else fall back to manual).
+- **MY vendors:** dispatched via Lalamove (primary). If Lalamove isn't configured, the
+  vendor falls back to the **manual** (self-delivery) path.
+- **AU vendors:** dispatched via Uber Direct (primary). If Uber Direct dispatch fails,
+  the platform **automatically falls back** to DoorDash Drive Classic — no vendor
+  involvement. Both adapters are behind the same `CourierAdapter` interface.
+- **Self-delivery fallback:** any vendor can opt into the legacy **manual** path,
+  delivering with their own rider and marking delivered in the portal. A vendor with
+  no courier configured also defaults to manual.
 - Courier dispatch is server-only and **idempotent** — an order is never
   double-dispatched.
 
@@ -397,6 +416,36 @@ courier's app or website. Polling stops once the order is delivered or failed.
 - **On courier failure/cancellation:** the order is marked `failed`, the subscriber
   is refunded, and the vendor earns nothing. An admin can re-dispatch or manually
   resolve a stuck delivery.
+- **AU auto-fallback:** if Uber Direct dispatch fails, the platform automatically
+  retries via DoorDash Drive Classic before marking the order failed. If both
+  providers fail, the order fails and the day is refunded.
+
+### Consolidated delivery runs (Phase L.1/L.2 — foundation built, multi-stop pending)
+
+The platform has the foundation for **consolidated delivery** — grouping orders
+from different vendors into one physical drop (e.g. an office team getting coffees
+from Café A and Café B arriving together).
+
+What's in place now:
+- A **DeliveryRun** record can group N orders (across vendors) into one drop,
+  with one `dropLocation`, one `targetDeliveryTime`, and an ordered list of
+  vendor pickup stops.
+- Orders inside a run are still **charged, paid, and confirmed independently**
+  per-vendor. A partial failure refunds only the missing order; the rest pay out
+  normally.
+- Run status is derived from the member orders' statuses — it is never a gate on
+  any order's money path.
+
+What's not yet active:
+- **Multi-stop courier dispatch** (Phase L.3) — blocked on courier capability
+  confirmation (no current adapter supports multi-stop pickup). The AU market
+  (Uber Direct, DoorDash) is single-vendor-per-delivery at launch.
+- **Hot-coffee logistics rules** (Phase L.4 — prep staggering, max hold time,
+  late-café policy) need product decisions and a manual pilot before the
+  consolidation engine is built.
+
+Consolidated delivery is forward-compatible with corporate office teams: an office
+is the most likely first consumer once multi-stop is validated.
 
 ---
 
@@ -515,9 +564,11 @@ temporary closure), `offline` (vendor-controlled closure), `suspended`
   **self-delivery (manual) path**, the vendor instead assigns a rider name and
   **marks delivered** (releases payout) or **marks failed** (refunds the customer).
   Tomorrow's locked orders are previewed but not yet actionable.
-- **Delivery provider** — a vendor can run on the platform courier (Lalamove) or
-  opt into **self-delivery (manual)**; left unset, they default to the platform
-  courier when it's configured, else manual.
+- **Delivery provider** — a vendor can run on the platform courier (resolved by
+  their market: Lalamove for MY, Uber Direct → DoorDash for AU) or opt into
+  **self-delivery (manual)**; left unset, they default to the platform courier
+  when it's configured, else manual. AU market vendors do not choose the courier
+  — the platform auto-falls back Uber Direct → DoorDash on dispatch failure.
 - **Earnings & payouts** — connect Stripe (Express onboarding), see **held**
   (awaiting payout) vs **paid out** totals, the last 20 payout statements (period,
   count, cadence, net, status), and toggle **payout cadence** (daily batch / per
@@ -610,11 +661,19 @@ The admin portal (`/admin`) lets the BrewPass team run the marketplace:
 - **Mobile:** the same web build wrapped with **Capacitor** (iOS/Android), adding
   native push notifications and geolocation.
 - **Data & services:** MongoDB Atlas (database), Auth0 (auth), Stripe + Stripe
-  Connect (payments/payouts), **Lalamove courier API** (delivery dispatch & tracking;
-  **Grab** planned as a second adapter), Firebase Cloud Messaging (push), Twilio
-  (SMS), Resend (email), Google Maps (geocoding, service-area distance & in-app
-  tracking maps), **Anthropic Claude** (AI menu extraction & vendor recommendations),
-  Vercel Blob (vendor logos/menu images), Sentry (monitoring).
+  Connect (payments/payouts), Firebase Cloud Messaging (push), Twilio (SMS),
+  Resend (email), Google Maps (geocoding, service-area distance & in-app tracking
+  maps), **Anthropic Claude** (AI menu extraction & vendor recommendations), Vercel
+  Blob (vendor logos/menu images), Sentry (monitoring).
+- **Courier adapters:**
+  - **Malaysia (MY):** Lalamove (primary, fully live).
+  - **Australia (AU):** Uber Direct (primary) with DoorDash Drive Classic
+    (automatic fallback on dispatch failure). Both behind the same `CourierAdapter`
+    interface. AU adapters are gated on production API access — they are dormant
+    until credentials are configured (see deployment guide §6c).
+  - All adapters share the same delivery state machine, webhook handling, and
+    payout-gating logic. Courier fee is always a platform cost; currency recorded
+    per market (MYR / AUD).
 
 ---
 

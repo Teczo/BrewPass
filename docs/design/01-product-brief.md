@@ -139,9 +139,30 @@ coffee on one company card** (charge-then-deliver, same as personal).
 
 ## Money, time, locale
 
-- Currency **MYR**, stored as integer **sen**, rendered `RM12.00`.
-- All timestamps stored UTC; **display in Asia/Kuala_Lumpur**.
+- Currency **MYR** for the Malaysian market (stored as integer **sen**, rendered
+  `RM12.00`); **AUD** for the Perth / Australian market (stored as integer
+  **cents**, rendered `A$12.00`). Currency always travels with the amount;
+  courier fees are recorded per-market in their respective currency.
+- All timestamps stored UTC; **display in Asia/Kuala_Lumpur** (MY) or the
+  subscriber's local timezone (AU — not built yet).
 - The **daily cutoff** (default 6:00 AM KL) is the moment orders lock and charge.
+
+## Markets & courier adapters
+
+BrewPass currently operates in two markets:
+
+| Market | Courier (primary) | Fallback | Status |
+|--------|------------------|----------|--------|
+| **Malaysia (MY)** | Lalamove | manual (self-deliver) | Live |
+| **Australia (AU) — Perth** | Uber Direct | DoorDash Drive Classic (auto-fallback) | Gated on API access |
+
+- Each vendor is assigned a **market** (`MY` or `AU`) at onboarding, confirmed
+  by the admin at approval. The platform resolves the correct courier chain per
+  dispatch — vendors do not choose their AU courier.
+- AU market is single-vendor-per-delivery at launch (multi-stop consolidated
+  delivery, Phase L.3, is parked pending courier capability validation).
+- The courier fee is a **platform cost** in all markets — never shown to the
+  subscriber, never deducted from vendor payout. Designers should not surface it.
 
 ## Design guardrails (don't break these)
 

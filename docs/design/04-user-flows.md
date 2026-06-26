@@ -105,9 +105,12 @@ rules live in [`USER_GUIDE.md`](../../USER_GUIDE.md).
 
 ### F6 — Become a vendor
 1. **`/vendor/apply`** — business info, location, hours, capacity → status
-   `pending`.
+   `pending`. The form geocodes the address and pre-fills a market suggestion
+   (`MY` or `AU`) — visible to the admin at review, not an editable field for
+   the applicant.
 2. Sees **"Application under review"** notice at `/vendor`.
-3. Admin approves → status `active` (or rejected, with note → can reapply).
+3. Admin approves (confirming/overriding the market suggestion) → status `active`
+   (or rejected, with note → can reapply).
 4. First login lands on the **fulfillment board**.
 
 ### F7 — Set up to receive orders
@@ -123,11 +126,14 @@ rules live in [`USER_GUIDE.md`](../../USER_GUIDE.md).
 ### F8 — Run a shift (daily)
 1. **`/vendor` board** — see today's confirmed orders (customer, drink, deliver-by).
 2. Advance each order: Preparing → Out for delivery → Delivered (or **decline**).
-3. Watch delivery state (rider/provider/tracking) per order.
+3. Watch delivery state (rider/provider/tracking) per order. For **MY vendors**:
+   courier is Lalamove. For **AU vendors**: courier is Uber Direct (auto-falls back
+   to DoorDash Drive Classic on dispatch failure — both invisible to the vendor).
 4. Glance at tomorrow's scheduled count (locks at the morning cutoff).
 5. Watch the **quality strip** (rating / acceptance / on-time); a red banner means
    auto-suspension.
 - **Design focus:** glanceable, big targets, obvious "what's next" + delivery state.
+  The vendor never sees which courier provider was used — just the delivery status.
 
 ### F9 — Get paid
 1. **`/vendor/earnings`** — earnings accrue **only after delivery** (delivery-gated).
@@ -196,4 +202,15 @@ rules live in [`USER_GUIDE.md`](../../USER_GUIDE.md).
 - **Payout follows delivery** in F8/F9 — design must keep that causality visible.
 - **Roles route hard** — subscribers, vendors, admins each land in their own app;
   wrong-role access shows a notice, not a broken screen.
+- **Courier is invisible to vendors and subscribers.** Whether a delivery goes via
+  Lalamove (MY), Uber Direct (AU), or DoorDash fallback (AU), the status states and
+  UI are identical. Never expose the provider name in the subscriber or vendor UI.
+- **Multi-market (MY/AU) design scope.** Current screens are MY-only (MYR, KL
+  timezone). When designing for AU, swap to AUD and local timezone display; all
+  other flows and states are identical. Do not add market-specific branches into
+  shared components — parameterize where needed.
+- **Consolidated delivery (Phase L.1/L.2 built; L.3 parked).** The `DeliveryRun`
+  data model exists but has no user-facing screen yet. The
+  `office-coffee-tracker` is already forward-compatible. Don't design a
+  consolidated-delivery view until Phase L.3 (multi-stop courier) is validated.
 </content>

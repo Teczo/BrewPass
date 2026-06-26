@@ -153,6 +153,12 @@ A member with office coffee sees, on their main dashboard:
   (*Scheduled → Confirmed → Being made → On its way → Delivered*). While a coffee
   is **out for delivery**, an optional **live map** shows the driver — but staff
   who don't want the map never have to open it.
+  > **Note on consolidated delivery:** the tracker is designed to be
+  > forward-compatible with multi-vendor consolidated delivery (Phase L.1/L.2
+  > foundation is built). When an office team eventually receives coffees from
+  > multiple vendors in one drop, this view will show the run-level status rather
+  > than assuming one delivery = one order. For now every office order is its own
+  > individual delivery.
 - **Same-day overlap notice** (advisory only) — if a member would get **both** a
   personal coffee and an office coffee on the same day, they're *informed* and
   offered a one-tap **"cancel one."** The **default is to keep both** (they're on

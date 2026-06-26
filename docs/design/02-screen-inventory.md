@@ -178,6 +178,10 @@ All `/vendor/*` screens are gated to vendor-linked accounts and branch on vendor
 ### `/vendor/apply` — Vendor application
 - **Purpose:** a coffee business applies to join. Captures business info,
   location, operating hours, capacity → status `pending`.
+- **Market suggestion:** the form geocodes the vendor's address and pre-fills
+  a **market** suggestion (`MY` or `AU`) based on the country. The admin
+  confirms or overrides it at approval. No explicit market picker needed in
+  the form — it's advisory and admin-authoritative.
 - **Components:** `vendor-apply-form`, `operating-hours-field`.
 
 ### `/vendor` — Fulfillment board (vendor home)
@@ -257,10 +261,11 @@ All `/vendor/*` screens are gated to vendor-linked accounts and branch on vendor
 
 ---
 
-## Backend-only surfaces (no UI to design — Phase I)
+## Backend-only surfaces (no UI to design)
 
-For completeness, two Phase I additions have **no screens** and need no design:
+For completeness, the following additions have **no screens** and need no design:
 
+**Phase I:**
 - **Versioned `/v1` API** (`/api/v1/*`) — a thin, authenticated HTTP layer over
   the domain services that exposes the stable `externalId` (never raw `_id`).
   Consumed by integrations, not the BrewPass UI.
@@ -269,6 +274,23 @@ For completeness, two Phase I additions have **no screens** and need no design:
   `payout.released`, `refund.issued`) delivered to registered subscribers.
   Subscriptions are managed **via admin API only** (`/api/admin/webhooks`) —
   there is no admin screen for them yet, so a redesign can ignore them.
+
+**Phase M (AU courier adapters):**
+- **Uber Direct adapter** (`src/lib/courier/uber-direct.ts`) — quote, dispatch,
+  track, cancel, webhook verify/parse, OAuth token caching. No UI.
+- **DoorDash Drive Classic adapter** (`src/lib/courier/doordash-drive.ts`) —
+  scaffold built (dormant until DoorDash Support grants AU sandbox access). No UI.
+- **`Vendor.market`** — the `MY`/`AU` field is set via the existing vendor apply
+  and admin review forms (a geocoded suggestion, admin-confirmed); no new screen.
+
+**Phase L.1/L.2 (consolidated delivery foundation):**
+- **`DeliveryRun` model** — groups N orders into one drop. The run has no screen;
+  per-order status in the existing order table and delivery tracker is the user-
+  facing signal. The `office-coffee-tracker` component is already forward-compatible.
+- **Run composition logic** (`src/lib/delivery/run-logic.ts`) — no UI.
+- **L.3 multi-stop courier dispatch** remains parked (no courier adapter supports
+  it yet); when it lands it will need new admin visibility for a run-level view.
+  Until then, design per-order — the run is invisible to users.
 
 ## Cross-app component library (current)
 
