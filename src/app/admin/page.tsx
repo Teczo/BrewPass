@@ -17,6 +17,7 @@ import {
 import { getCurrentAdmin } from "@/lib/admin";
 import { getSession } from "@/lib/auth0";
 import {
+  optionTaxonomyCollection,
   ordersCollection,
   subscriptionsCollection,
   usersCollection,
@@ -47,22 +48,31 @@ export default async function AdminPage() {
   }
 
   const today = localDateOf(new Date());
-  const [orders, vendors, users, subscriptions] = await Promise.all([
+  const [orders, vendors, users, subscriptions, taxonomy] = await Promise.all([
     ordersCollection(),
     vendorsCollection(),
     usersCollection(),
     subscriptionsCollection(),
+    optionTaxonomyCollection(),
   ]);
 
-  const [todayOrders, vendorDocs, userDocs, activeSubs, totalUsers, commissionDefaultBps] =
-    await Promise.all([
-      orders.find({ date: today }).sort({ deliverAt: 1 }).limit(200).toArray(),
-      vendors.find({}).sort({ businessName: 1 }).toArray(),
-      users.find({}).sort({ createdAt: -1 }).limit(100).toArray(),
-      subscriptions.countDocuments({ status: { $in: ["active", "trialing"] } }),
-      users.estimatedDocumentCount(),
-      getPlatformCommissionBps(),
-    ]);
+  const [
+    todayOrders,
+    vendorDocs,
+    userDocs,
+    activeSubs,
+    totalUsers,
+    commissionDefaultBps,
+    taxonomyCount,
+  ] = await Promise.all([
+    orders.find({ date: today }).sort({ deliverAt: 1 }).limit(200).toArray(),
+    vendors.find({}).sort({ businessName: 1 }).toArray(),
+    users.find({}).sort({ createdAt: -1 }).limit(100).toArray(),
+    subscriptions.countDocuments({ status: { $in: ["active", "trialing"] } }),
+    users.estimatedDocumentCount(),
+    getPlatformCommissionBps(),
+    taxonomy.estimatedDocumentCount(),
+  ]);
 
   const nameById = new Map(userDocs.map((user) => [user._id.toHexString(), user.name]));
   const vendorNameById = new Map(
@@ -186,6 +196,19 @@ export default async function AdminPage() {
         ))}
       </section>
 
+      {taxonomyCount === 0 && (
+        <section className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-4">
+          <div>
+            <h2 className="font-semibold text-amber-900">Platform setup: seed the menu taxonomy</h2>
+            <p className="text-sm text-amber-800">
+              No menu taxonomy yet. Seed it so subscriber preferences and vendor menus have a
+              canonical option set to map onto.
+            </p>
+          </div>
+          <AdminSeedTaxonomyButton />
+        </section>
+      )}
+
       {failures.length > 0 && (
         <section className="rounded-md border border-red-200 bg-red-50 p-4">
           <h2 className="font-semibold text-red-800">Failures today</h2>
@@ -202,32 +225,38 @@ export default async function AdminPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Routing health</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-md border border-neutral-200 p-4">
-            <p className="text-2xl font-bold">{Math.round(reassignmentRate * 100)}%</p>
-            <p className="text-xs text-neutral-500">
-              reassignment rate ({reassignedCount}/{todayOrders.length})
-            </p>
+        {todayOrders.length === 0 ? (
+          <p className="rounded-md border border-neutral-200 p-4 text-sm text-neutral-500">
+            No orders yet today.
+          </p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-md border border-neutral-200 p-4">
+              <p className="text-2xl font-bold">{Math.round(reassignmentRate * 100)}%</p>
+              <p className="text-xs text-neutral-500">
+                reassignment rate ({reassignedCount}/{todayOrders.length})
+              </p>
+            </div>
+            <div className="rounded-md border border-neutral-200 p-4">
+              <p className="text-2xl font-bold">{failures.length}</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                {failureReasonCounts.size === 0
+                  ? "no failures"
+                  : [...failureReasonCounts.entries()]
+                      .map(([reason, count]) => `${reason}: ${count}`)
+                      .join(" · ")}
+              </p>
+            </div>
+            <div className="rounded-md border border-neutral-200 p-4">
+              <p className="text-2xl font-bold">{suspendedVendors.length}</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                quality-suspended{" "}
+                {suspendedVendors.length > 0 &&
+                  `· ${suspendedVendors.map((vendor) => vendor.businessName).join(", ")}`}
+              </p>
+            </div>
           </div>
-          <div className="rounded-md border border-neutral-200 p-4">
-            <p className="text-2xl font-bold">{failures.length}</p>
-            <p className="mt-1 text-xs text-neutral-500">
-              {failureReasonCounts.size === 0
-                ? "no failures"
-                : [...failureReasonCounts.entries()]
-                    .map(([reason, count]) => `${reason}: ${count}`)
-                    .join(" · ")}
-            </p>
-          </div>
-          <div className="rounded-md border border-neutral-200 p-4">
-            <p className="text-2xl font-bold">{suspendedVendors.length}</p>
-            <p className="mt-1 text-xs text-neutral-500">
-              quality-suspended{" "}
-              {suspendedVendors.length > 0 &&
-                `· ${suspendedVendors.map((vendor) => vendor.businessName).join(", ")}`}
-            </p>
-          </div>
-        </div>
+        )}
       </section>
 
       <section className="flex flex-col gap-3">

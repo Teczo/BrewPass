@@ -152,6 +152,19 @@ export function rankCandidates(
   });
 }
 
+/**
+ * Whether ANY active candidate's service area covers the point (Phase O.1).
+ * This is the coverage-gap test that distinguishes a true cold-start gap from
+ * a transient all-busy day: it ignores every transient gate (hours, capacity,
+ * sold-out, accept-cutoff) and asks only "could some vendor here ever serve
+ * this address?". A `false` result means the user should be waitlisted
+ * (`fallbacks.md` §1.1/§1.2); a `true` result with no eligible vendor is a
+ * transient miss, handled by the O.2 retry path, not the waitlist.
+ */
+export function hasAreaCoverage(candidates: RoutingCandidate[], point: GeoPoint): boolean {
+  return candidates.some((candidate) => isWithinServiceArea(candidate.vendor, point));
+}
+
 /** Decide which vendor fulfils an order, or report that none can. */
 export function selectVendor(
   request: RoutingRequest,

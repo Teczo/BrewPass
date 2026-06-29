@@ -18,7 +18,8 @@ import type { Order, Subscription } from "@/lib/models";
 import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
 import { loadSkippedUserIdsForDate } from "@/lib/monthly-list/service";
 import { buildOrder, evaluateCutoff, evaluateGeneration } from "@/lib/order-engine/logic";
-import { deliveryHourOf } from "@/lib/order-engine/routing";
+import { deliveryHourOf, hasAreaCoverage } from "@/lib/order-engine/routing";
+import { recordWaitlistEntry } from "@/lib/launch-waitlist";
 import {
   loadRoutingCandidates,
   selectVendor,
@@ -129,6 +130,29 @@ export async function generateOrdersForDate(
       routingCandidates,
     );
     if (!result.ok) {
+      // Phase O.1: distinguish a true coverage gap (no vendor's service area
+      // covers this address at all) from a transient all-busy day. A gap means
+      // the user should be waitlisted and emailed when coverage arrives
+      // (fallbacks.md §1.1/§1.2); a transient miss is left to retry (O.2). Either
+      // way generation skips silently here — no failure is pushed to the user.
+      if (!hasAreaCoverage(routingCandidates, location.geo)) {
+        try {
+          await recordWaitlistEntry({
+            userId: subscription.userId,
+            address: location.address,
+            geo: location.geo,
+            now,
+          });
+        } catch (error) {
+          // Best-effort: a waitlist write must never break generation.
+          console.error(
+            `Waitlist record failed for user ${subscription.userId.toHexString()}:`,
+            error,
+          );
+        }
+        summary.skipped.push({ subscriptionId: subId, reason: "waitlisted_no_coverage" });
+        continue;
+      }
       summary.skipped.push({ subscriptionId: subId, reason: result.reason });
       continue;
     }

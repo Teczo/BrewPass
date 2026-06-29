@@ -9,6 +9,7 @@ import type {
   CourierToken,
   Delivery,
   DeliveryRun,
+  LaunchWaitlist,
   Location,
   OptionTaxonomy,
   MonthlyList,
@@ -131,6 +132,10 @@ export async function courierTokensCollection(): Promise<Collection<CourierToken
   return (await getDb()).collection<CourierToken>("courierTokens");
 }
 
+export async function launchWaitlistCollection(): Promise<Collection<LaunchWaitlist>> {
+  return (await getDb()).collection<LaunchWaitlist>("launchWaitlist");
+}
+
 /**
  * Indexes the app relies on. Idempotent — safe to call from a setup script
  * or admin route after provisioning a new database.
@@ -160,6 +165,7 @@ export async function ensureIndexes(): Promise<void> {
     vendorPromotions,
     packPurchases,
     courierTokens,
+    launchWaitlist,
   ] = await Promise.all([
     usersCollection(),
     locationsCollection(),
@@ -184,6 +190,7 @@ export async function ensureIndexes(): Promise<void> {
     vendorPromotionsCollection(),
     packPurchasesCollection(),
     courierTokensCollection(),
+    launchWaitlistCollection(),
   ]);
 
   await Promise.all([
@@ -353,6 +360,15 @@ export async function ensureIndexes(): Promise<void> {
     packPurchases.createIndex({ corporateAccountId: 1, date: 1 }, { unique: true }),
     packPurchases.createIndex({ status: 1, date: 1 }),
     packPurchases.createIndex(
+      { externalId: 1 },
+      { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+    ),
+    // Phase O.1 — cold-start launch waitlist. One record per user; generation
+    // upserts on this key (idempotent, preserves notifiedAt). The vendor-approval
+    // match job scans unfulfilled entries (notifiedAt unset) by market.
+    launchWaitlist.createIndex({ userId: 1 }, { unique: true }),
+    launchWaitlist.createIndex({ market: 1, notifiedAt: 1 }),
+    launchWaitlist.createIndex(
       { externalId: 1 },
       { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
     ),

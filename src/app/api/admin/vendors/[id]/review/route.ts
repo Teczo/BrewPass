@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
 import { usersCollection, vendorsCollection } from "@/lib/collections";
+import { matchWaitlistForVendor } from "@/lib/launch-waitlist";
 import { marketSchema } from "@/lib/models";
 
 export const runtime = "nodejs";
@@ -78,6 +79,18 @@ export async function POST(request: Request, context: RouteContext) {
       { _id: vendor.ownerUserId, role: { $ne: "admin" } },
       { $set: { role: "vendor", updatedAt: now } },
     );
+  }
+
+  if (input.action === "approve") {
+    // Phase O.1: a newly-active vendor may close a coverage gap. Match its
+    // service area against the launch waitlist and email covered users once
+    // (idempotent, §1.2). Best-effort — never blocks the approval response.
+    try {
+      const matched = await matchWaitlistForVendor(vendor, now);
+      console.log("vendor-approval waitlist match:", JSON.stringify(matched));
+    } catch (error) {
+      console.error("Waitlist match on vendor approval failed:", error);
+    }
   }
 
   return NextResponse.json({ ok: true, status: vendor.status });

@@ -21,5 +21,6 @@ export * from "@/lib/models/corporate-account";
 export * from "@/lib/models/corporate-membership";
 export * from "@/lib/models/corporate-join-code";
 export * from "@/lib/models/preference-signal";
+export * from "@/lib/models/launch-waitlist";
 export * from "@/lib/models/webhook-event";
 export * from "@/lib/models/webhook-subscription";
