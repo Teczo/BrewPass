@@ -23,6 +23,17 @@ interface TrackingData {
 }
 
 const POLL_MS = 15_000;
+/** Driver location older than this is "stale" — surface the provider's own
+ * tracker as a fallback while we keep polling (§5.5). */
+const STALE_LOCATION_MS = 60_000;
+
+const PROVIDER_LABEL: Record<string, string> = {
+  lalamove: "Lalamove",
+  grab: "Grab",
+  uber_direct: "Uber",
+  doordash_drive: "DoorDash",
+  manual: "the courier",
+};
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
   pending: "Finding a driver",
@@ -49,6 +60,14 @@ function staticMapUrl(data: TrackingData): string | null {
 export function DeliveryTracker({ orderId }: { orderId: string }) {
   const [data, setData] = useState<TrackingData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // §12.4: if the static map image fails to load (Maps down/blocked), fall back
+  // to the non-map view for the rest of the session rather than show a broken
+  // image.
+  const [mapFailed, setMapFailed] = useState(false);
+  // §5.5: whether the driver's last position is stale (>60s). Computed at poll
+  // time (not during render) and refreshed every poll, so it clears once the
+  // location resumes.
+  const [locationStale, setLocationStale] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -62,6 +81,13 @@ export function DeliveryTracker({ orderId }: { orderId: string }) {
         if (!active) return;
         setData(payload);
         setError(null);
+        setLocationStale(
+          Boolean(
+            payload.driverLocation?.updatedAt &&
+              Date.now() - new Date(payload.driverLocation.updatedAt).getTime() >
+                STALE_LOCATION_MS,
+          ),
+        );
         // Stop polling once the order leaves the in-flight states.
         if (payload.orderStatus === "out_for_delivery") {
           timer = setTimeout(poll, POLL_MS);
@@ -86,10 +112,20 @@ export function DeliveryTracker({ orderId }: { orderId: string }) {
     );
   }
 
-  const mapUrl = data ? staticMapUrl(data) : null;
+  const mapUrl = data && !mapFailed ? staticMapUrl(data) : null;
   const statusLabel = data?.deliveryStatus
     ? (DELIVERY_STATUS_LABEL[data.deliveryStatus] ?? data.deliveryStatus)
     : "On its way";
+
+  // §5.5: when the driver location is stale (computed at poll time above) we
+  // surface the provider's own tracker as a live source while we keep polling.
+  const providerLabel = data ? (PROVIDER_LABEL[data.provider] ?? "the courier") : "the courier";
+  // Show the provider fallback link when our in-app view can't be trusted:
+  // the map failed to load (§12.4), the location is stale (§5.5), or we have no
+  // live location yet.
+  const showProviderFallback = Boolean(
+    data?.trackingUrl && (mapFailed || locationStale || !data?.driverLocation),
+  );
 
   return (
     <Card className="flex flex-col gap-3 p-5">
@@ -104,6 +140,7 @@ export function DeliveryTracker({ orderId }: { orderId: string }) {
           src={mapUrl}
           alt={`Driver location en route to ${data?.dropoff.label}`}
           className="w-full rounded-2xl border border-hairline"
+          onError={() => setMapFailed(true)}
         />
       ) : (
         <p className="text-sm text-coffee">
@@ -125,14 +162,16 @@ export function DeliveryTracker({ orderId }: { orderId: string }) {
         </p>
       )}
 
-      {data?.trackingUrl && (
+      {showProviderFallback && (
         <a
-          href={data.trackingUrl}
+          href={data!.trackingUrl!}
           target="_blank"
           rel="noopener noreferrer"
           className="text-sm font-semibold text-coffee hover:underline"
         >
-          Trouble loading? Open live tracking →
+          {locationStale
+            ? `Live location is delayed — open in ${providerLabel} tracker →`
+            : `Open in ${providerLabel} tracker →`}
         </a>
       )}
 

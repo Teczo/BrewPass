@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
 import { ordersCollection, subscriptionsCollection, vendorsCollection } from "@/lib/collections";
-import { adminMarkDelivered, adminRedispatchCourier } from "@/lib/courier/service";
+import { adminMarkDelivered, adminMarkFailed, adminRedispatchCourier } from "@/lib/courier/service";
 import { refundChargedOrder } from "@/lib/payments/refund";
 
 export const runtime = "nodejs";
@@ -22,6 +22,8 @@ const actionSchema = z.discriminatedUnion("action", [
   // v2.1 courier overrides for stuck courier orders.
   z.object({ action: z.literal("courier_redispatch") }),
   z.object({ action: z.literal("courier_mark_delivered") }),
+  // Phase O.4 (§5.6): force a stuck delivery to failed (auto-refunds the day).
+  z.object({ action: z.literal("courier_mark_failed") }),
 ]);
 
 /** Return one quota credit, at most once per order (quotaRefundedAt guard). */
@@ -126,6 +128,18 @@ export async function POST(request: Request, context: RouteContext) {
         result.reason === "not_out_for_delivery"
           ? "Only an order that's out for delivery can be marked delivered."
           : `Mark delivered failed: ${result.reason}`;
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (input.action === "courier_mark_failed") {
+    const result = await adminMarkFailed(orderId, now);
+    if (!result.ok) {
+      const message =
+        result.reason === "not_out_for_delivery"
+          ? "Only an order that's out for delivery can be marked failed."
+          : `Mark failed failed: ${result.reason}`;
       return NextResponse.json({ error: message }, { status: 409 });
     }
     return NextResponse.json({ ok: true });

@@ -5,7 +5,9 @@ import {
   AdminUsers,
   AdminVendors,
   CommissionPanel,
+  StuckDeliveries,
   type AdminOrderRow,
+  type AdminStuckRow,
   type AdminUserRow,
   type AdminVendorRow,
 } from "@/components/admin-panels";
@@ -16,6 +18,8 @@ import {
 } from "@/components/admin-setup-button";
 import { getCurrentAdmin } from "@/lib/admin";
 import { getSession } from "@/lib/auth0";
+import { deliveryProvider } from "@/lib/models";
+import { findStuckDeliveries } from "@/lib/delivery/stuck";
 import {
   optionTaxonomyCollection,
   ordersCollection,
@@ -90,6 +94,48 @@ export default async function AdminPage() {
       .toArray();
     for (const user of extra) nameById.set(user._id.toHexString(), user.name);
   }
+
+  // Phase O.4 (§5.6): deliveries wedged in flight (a courier webhook never
+  // arrived). Detected at read time and surfaced with Resolve actions.
+  const stuckNow = new Date();
+  const stuckDeliveries = await findStuckDeliveries(stuckNow);
+  const stuckOrderIds = stuckDeliveries.map((delivery) => delivery.orderId);
+  const stuckOrders =
+    stuckOrderIds.length > 0
+      ? await orders.find({ _id: { $in: stuckOrderIds } }).toArray()
+      : [];
+  const stuckOrderById = new Map(stuckOrders.map((order) => [order._id.toHexString(), order]));
+  // Names for stuck-order customers not in the latest-100 slice.
+  const stuckMissingUserIds = stuckOrders
+    .map((order) => order.userId)
+    .filter((id) => !nameById.has(id.toHexString()));
+  if (stuckMissingUserIds.length > 0) {
+    const extra = await users
+      .find({ _id: { $in: stuckMissingUserIds } })
+      .project<{ _id: (typeof stuckMissingUserIds)[number]; name: string }>({ name: 1 })
+      .toArray();
+    for (const user of extra) nameById.set(user._id.toHexString(), user.name);
+  }
+  const nowMs = stuckNow.getTime();
+  const stuckRows: AdminStuckRow[] = stuckDeliveries.flatMap((delivery) => {
+    const order = stuckOrderById.get(delivery.orderId.toHexString());
+    if (!order) return [];
+    const anchor =
+      delivery.pickedUpAt ?? delivery.dispatchedAt ?? delivery.assignedAt ?? delivery.createdAt;
+    return [
+      {
+        orderId: order._id.toHexString(),
+        customerName: nameById.get(order.userId.toHexString()) ?? "Customer",
+        drink: order.drink.drink,
+        vendorName: order.vendorId
+          ? (vendorNameById.get(order.vendorId.toHexString()) ?? "?")
+          : "—",
+        provider: deliveryProvider(delivery),
+        deliveryStatus: delivery.status,
+        stuckMinutes: Math.round((nowMs - anchor.getTime()) / 60_000),
+      },
+    ];
+  });
 
   const statusCounts = new Map<string, number>();
   for (const order of todayOrders) {
@@ -212,6 +258,8 @@ export default async function AdminPage() {
           <AdminSeedTaxonomyButton />
         </section>
       )}
+
+      <StuckDeliveries rows={stuckRows} />
 
       {failures.length > 0 && (
         <section className="rounded-md border border-red-200 bg-red-50 p-4">

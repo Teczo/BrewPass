@@ -497,6 +497,27 @@ export async function adminMarkDelivered(
 }
 
 /**
+ * Admin override: force a stuck courier order to `failed` (Phase O.4 §5.6) — for
+ * when the courier never completed and the webhook never arrived. Goes through
+ * the same idempotent transition as a courier-failure webhook: the order is
+ * marked `failed` and the day is auto-refunded (no transfer was ever released —
+ * payout is delivery-gated, rule #4), exactly once.
+ */
+export async function adminMarkFailed(
+  orderId: ObjectId,
+  now: Date = new Date(),
+): Promise<AdminCourierResult> {
+  const orders = await ordersCollection();
+  const order = await orders.findOne({ _id: orderId });
+  if (!order) return { ok: false, reason: "order_not_found" };
+  if (order.status !== "out_for_delivery") {
+    return { ok: false, reason: "not_out_for_delivery" };
+  }
+  await applyTransition(orderId, "failed", "ADMIN_OVERRIDE", now);
+  return { ok: true };
+}
+
+/**
  * Admin override: re-dispatch a courier for a stuck order (v2.1) — e.g. the
  * courier cancelled mid-delivery, or the original dispatch failed. Best-effort
  * cancels any prior courier order, resets the delivery, returns the order to

@@ -206,6 +206,93 @@ export function AdminOrdersTable({
   );
 }
 
+export interface AdminStuckRow {
+  orderId: string;
+  customerName: string;
+  drink: string;
+  vendorName: string;
+  provider: string;
+  deliveryStatus: string;
+  /** Minutes the delivery has been in flight past pickup/dispatch. */
+  stuckMinutes: number;
+}
+
+/**
+ * Phase O.4 (§5.6) — deliveries wedged in flight (a courier webhook never
+ * arrived). The operator resolves each one without leaving the dashboard:
+ * re-dispatch the courier, mark it delivered (releases payout), or mark it
+ * failed (auto-refunds the customer). All three go through the same idempotent
+ * transitions as the courier webhooks.
+ */
+export function StuckDeliveries({ rows }: { rows: AdminStuckRow[] }) {
+  const { run, busy, error } = useAdminAction();
+  if (rows.length === 0) return null;
+
+  return (
+    <section className="rounded-md border border-amber-300 bg-amber-50 p-4">
+      <h2 className="font-semibold text-amber-900">Stuck deliveries</h2>
+      <p className="mt-0.5 text-xs text-amber-800">
+        In flight with no courier update for too long — resolve manually.
+      </p>
+      <ul className="mt-2 flex flex-col gap-2">
+        {rows.map((row) => (
+          <li
+            key={row.orderId}
+            className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-white p-2 text-sm"
+          >
+            <div>
+              <span className="font-medium">{row.customerName}</span> — {row.drink} ·{" "}
+              {row.vendorName}
+              <span className="block text-xs text-neutral-500">
+                {row.provider} · {row.deliveryStatus} · stuck {row.stuckMinutes} min
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  run(`/api/admin/orders/${row.orderId}`, "POST", { action: "courier_redispatch" })
+                }
+                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+              >
+                Re-dispatch
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  run(`/api/admin/orders/${row.orderId}`, "POST", {
+                    action: "courier_mark_delivered",
+                  })
+                }
+                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+              >
+                Mark delivered
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm("Mark failed and refund the customer?")) {
+                    run(`/api/admin/orders/${row.orderId}`, "POST", {
+                      action: "courier_mark_failed",
+                    });
+                  }
+                }}
+                className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                Mark failed
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+    </section>
+  );
+}
+
 /** Statuses an admin can set directly; applications use the review flow. */
 const ADMIN_STATUSES = ["active", "paused", "suspended", "offline"];
 
