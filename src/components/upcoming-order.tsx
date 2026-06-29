@@ -3,6 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
+import { cn } from "@/lib/cn";
 import type { LocationJson, OrderJson } from "@/lib/serializers";
 import { DEFAULT_DRINK_OPTIONS, ensureOption, type DrinkOptions } from "@/lib/taxonomy-options";
 
@@ -16,6 +20,16 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Failed",
 };
 
+const STATUS_TONES: Record<string, StatusTone> = {
+  scheduled: "scheduled",
+  confirmed: "scheduled",
+  preparing: "preparing",
+  out_for_delivery: "preparing",
+  delivered: "delivered",
+  skipped: "skipped",
+  failed: "failed",
+};
+
 function formatKl(iso: string): string {
   return new Date(iso).toLocaleString("en-MY", {
     timeZone: "Asia/Kuala_Lumpur",
@@ -23,6 +37,25 @@ function formatKl(iso: string): string {
     minute: "2-digit",
   });
 }
+
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+}
+
+// Translucent attribute pill shown on the dark detail card.
+function AttrPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-full border border-white/40 px-3 py-[5px] text-[11px] font-semibold text-white">
+      {children}
+    </span>
+  );
+}
+
+const SELECT_CLASS =
+  "rounded-xl border border-border bg-field px-3.5 py-3 text-[15px] font-medium text-ink focus:border-coffee focus:outline-none";
 
 export interface AddOnOption {
   key: string;
@@ -71,6 +104,7 @@ export function UpcomingOrder({
   const beforeCutoff = mountedAtMs < new Date(order.cutoffAt).getTime();
   const canModify = order.status === "scheduled" && beforeCutoff;
   const canUnskip = order.status === "skipped" && beforeCutoff;
+  const locksIn = formatDuration(new Date(order.cutoffAt).getTime() - mountedAtMs);
 
   async function act(body: object) {
     setBusy(true);
@@ -93,101 +127,106 @@ export function UpcomingOrder({
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="font-semibold">Tomorrow&apos;s coffee</h2>
-          <p className="text-sm text-neutral-500">
-            {order.date} · {STATUS_LABELS[order.status] ?? order.status}
-          </p>
+    <section className="flex flex-col gap-4">
+      {/* Dark "Tomorrow's Coffee" detail card */}
+      <div className="flex flex-col gap-4 rounded-3xl bg-espresso p-6 text-white shadow-card-lg">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-white/60">
+              Tomorrow&apos;s Coffee
+            </span>
+            <span className="text-xs text-white/60">{order.date}</span>
+          </div>
+          <StatusPill tone={STATUS_TONES[order.status] ?? "scheduled"}>
+            {STATUS_LABELS[order.status] ?? order.status}
+          </StatusPill>
         </div>
-        {canModify && (
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900">
-            Locks at {formatKl(order.cutoffAt)}
-          </span>
+
+        {order.status !== "skipped" ? (
+          <>
+            <h2 className="font-display text-3xl leading-tight">{order.drink.drink}</h2>
+            <div className="flex flex-wrap gap-2">
+              <AttrPill>{order.drink.size}</AttrPill>
+              <AttrPill>{order.drink.milk}</AttrPill>
+              <AttrPill>{order.drink.strength}</AttrPill>
+              <AttrPill>
+                {order.drink.sugar === 0 ? "No sugar" : `Sugar ${order.drink.sugar}`}
+              </AttrPill>
+            </div>
+            {order.addOns.length > 0 && (
+              <p className="text-sm text-amber">
+                + {order.addOns.map((addOn) => addOn.name).join(", ")}
+                {order.addOnsPaymentStatus === "failed" && (
+                  <span className="ml-1 text-terracotta-soft">(payment failed — removed)</span>
+                )}
+              </p>
+            )}
+            <div className="border-t border-white/15 pt-3 text-sm text-white/80">
+              <p>{order.location.label}</p>
+              <p className="mt-0.5">
+                Expected by {formatKl(order.deliverAt)}{" "}
+                <span className="text-white/50">(Asia/Kuala_Lumpur)</span>
+              </p>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-white/70">
+            You&apos;re skipping this one — no coffee, no quota used.
+          </p>
         )}
       </div>
 
-      {order.status !== "skipped" ? (
-        <div className="text-sm text-neutral-600">
-          <p className="text-lg font-medium text-neutral-900">{order.drink.drink}</p>
-          <p>
-            {order.drink.size} · {order.drink.milk} ·{" "}
-            {order.drink.sugar === 0 ? "no sugar" : `sugar ${order.drink.sugar}`} ·{" "}
-            {order.drink.strength}
-          </p>
-          <p className="mt-1">
-            To {order.location.label} at {formatKl(order.deliverAt)}
-          </p>
-          {order.addOns.length > 0 && (
-            <p className="mt-1 text-amber-900">
-              + {order.addOns.map((addOn) => addOn.name).join(", ")}
-              {order.addOnsPaymentStatus === "failed" && (
-                <span className="ml-1 text-red-600">(payment failed — removed)</span>
-              )}
-            </p>
-          )}
-        </div>
-      ) : (
-        <p className="text-sm text-neutral-500">
-          You&apos;re skipping this one — no coffee, no quota used.
-        </p>
+      {canModify && (
+        <Notice>
+          Locks in <span className="font-mono font-semibold">{locksIn}</span>. You
+          can edit or skip until {formatKl(order.cutoffAt)} daily.
+        </Notice>
       )}
 
       {canModify && order.suggestion && (
-        <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-amber-900">💡 {order.suggestion.message}</p>
-          {order.suggestion.drink && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                act({
-                  action: "modify",
-                  drink: { ...order.drink, drink: order.suggestion!.drink },
-                })
-              }
-              className="shrink-0 rounded-md bg-amber-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-            >
-              Switch to {order.suggestion.drink}
-            </button>
-          )}
-        </div>
+        <Notice tone="sage" icon="💡">
+          <div className="flex flex-col gap-2">
+            <span>{order.suggestion.message}</span>
+            {order.suggestion.drink && (
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  act({
+                    action: "modify",
+                    drink: { ...order.drink, drink: order.suggestion!.drink },
+                  })
+                }
+                className="self-start"
+              >
+                Switch to {order.suggestion.drink}
+              </Button>
+            )}
+          </div>
+        </Notice>
       )}
 
       {canModify && !editing && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50"
-          >
-            Change
-          </button>
-          <button
-            type="button"
-            onClick={() => act({ action: "skip" })}
-            disabled={busy}
-            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
-          >
-            Skip tomorrow
-          </button>
+        <div className="flex gap-3">
+          <Button onClick={() => setEditing(true)}>Edit</Button>
+          <Button variant="secondary" onClick={() => act({ action: "skip" })} disabled={busy}>
+            Skip Day
+          </Button>
         </div>
       )}
       {canUnskip && (
-        <button
-          type="button"
+        <Button
+          className="self-start"
           onClick={() => act({ action: "unskip" })}
           disabled={busy}
-          className="self-start rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
         >
           Restore tomorrow&apos;s coffee
-        </button>
+        </Button>
       )}
 
       {editing && (
         <form
-          className="flex flex-col gap-3 rounded-md bg-neutral-50 p-3"
+          className="flex flex-col gap-3 rounded-2xl bg-surface p-4 shadow-card"
           onSubmit={(event) => {
             event.preventDefault();
             act({
@@ -199,10 +238,10 @@ export function UpcomingOrder({
           }}
         >
           <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm font-medium">
+            <label className="flex flex-col gap-1 text-xs font-medium text-coffee">
               Drink
               <select
-                className="rounded-md border border-neutral-300 px-3 py-2"
+                className={SELECT_CLASS}
                 value={drink}
                 onChange={(e) => setDrink(e.target.value)}
                 required
@@ -214,10 +253,10 @@ export function UpcomingOrder({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
+            <label className="flex flex-col gap-1 text-xs font-medium text-coffee">
               Size
               <select
-                className="rounded-md border border-neutral-300 px-3 py-2"
+                className={SELECT_CLASS}
                 value={size}
                 onChange={(e) => setSize(e.target.value)}
               >
@@ -228,10 +267,10 @@ export function UpcomingOrder({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
+            <label className="flex flex-col gap-1 text-xs font-medium text-coffee">
               Milk
               <select
-                className="rounded-md border border-neutral-300 px-3 py-2"
+                className={SELECT_CLASS}
                 value={milk}
                 onChange={(e) => setMilk(e.target.value)}
               >
@@ -242,10 +281,10 @@ export function UpcomingOrder({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
+            <label className="flex flex-col gap-1 text-xs font-medium text-coffee">
               Strength
               <select
-                className="rounded-md border border-neutral-300 px-3 py-2"
+                className={SELECT_CLASS}
                 value={strength}
                 onChange={(e) => setStrength(e.target.value)}
               >
@@ -256,10 +295,10 @@ export function UpcomingOrder({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
+            <label className="flex flex-col gap-1 text-xs font-medium text-coffee">
               Sugar
               <select
-                className="rounded-md border border-neutral-300 px-3 py-2"
+                className={SELECT_CLASS}
                 value={sugar}
                 onChange={(e) => setSugar(Number(e.target.value))}
               >
@@ -270,10 +309,10 @@ export function UpcomingOrder({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
+            <label className="flex flex-col gap-1 text-xs font-medium text-coffee">
               Deliver to
               <select
-                className="rounded-md border border-neutral-300 px-3 py-2"
+                className={SELECT_CLASS}
                 value={locationId}
                 onChange={(e) => setLocationId(e.target.value)}
               >
@@ -286,17 +325,20 @@ export function UpcomingOrder({
             </label>
           </div>
           {addOnOptions.length > 0 && (
-            <fieldset className="flex flex-col gap-2 text-sm font-medium">
-              <legend className="mb-1">Add-ons (charged to your card at 6:00 AM)</legend>
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-1 text-xs font-medium text-coffee">
+                Add-ons (charged to your card at 6:00 AM)
+              </legend>
               <div className="flex flex-wrap gap-2">
                 {addOnOptions.map((option) => (
                   <label
                     key={option.key}
-                    className={`cursor-pointer rounded-md border px-3 py-2 text-sm ${
+                    className={cn(
+                      "cursor-pointer rounded-full border px-4 py-[9px] text-[13px] font-semibold",
                       addOnKeys.includes(option.key)
-                        ? "border-amber-800 bg-amber-50 text-amber-900"
-                        : "border-neutral-300"
-                    }`}
+                        ? "border-espresso bg-espresso text-white"
+                        : "border-border bg-surface text-coffee",
+                    )}
                   >
                     <input
                       type="checkbox"
@@ -310,26 +352,18 @@ export function UpcomingOrder({
               </div>
             </fieldset>
           )}
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-            >
+          <div className="flex gap-3">
+            <Button type="submit" disabled={busy}>
               {busy ? "Saving…" : "Save changes"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50"
-            >
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setEditing(false)}>
               Cancel
-            </button>
+            </Button>
           </div>
         </form>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-terracotta">{error}</p>}
     </section>
   );
 }
