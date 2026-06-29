@@ -3,6 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Card, SectionLabel } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
+import { StatusPill } from "@/components/ui/status-pill";
+import { cn } from "@/lib/cn";
 import { formatMyr } from "@/lib/format";
 import type { MonthlyListJson } from "@/lib/serializers";
 import type { Option } from "@/lib/taxonomy-options";
@@ -20,6 +25,9 @@ const PRIORITIES = [
 const PRIORITY_LEVELS = ["Doesn't matter", "Nice to have", "Important", "Top priority"];
 type Priorities = Record<(typeof PRIORITIES)[number]["key"], number>;
 const DEFAULT_PRIORITIES: Priorities = { proximity: 2, price: 1, speed: 1, rating: 1, drink: 1 };
+
+const SELECT_CLASS =
+  "rounded-xl border border-border bg-field px-3 py-2 text-sm font-medium text-ink focus:border-coffee focus:outline-none disabled:opacity-50";
 
 function monthLabel(period: string): string {
   const [y, m] = period.split("-").map(Number);
@@ -115,21 +123,24 @@ export function MonthlyListPlanner({ period, initialList, vendors, drinkOptions 
   }
 
   const questionnaire = (
-    <div className="flex flex-col gap-4 rounded-md border border-neutral-200 p-6">
-      <p className="text-sm text-neutral-600">
+    <Card className="flex flex-col gap-4 p-6">
+      <p className="text-sm text-coffee">
         Answer a few questions and the assistant plans a coffee <em>and</em> a vendor for every
-        delivery day in <span className="font-medium">{monthLabel(period)}</span> — varying the
-        coffee so it stays interesting. You review the whole month, tweak any day, then confirm
-        once.
+        delivery day in <span className="font-semibold text-espresso">{monthLabel(period)}</span> —
+        varying the coffee so it stays interesting. You review the whole month, tweak any day, then
+        confirm once.
       </p>
 
       <div className="flex flex-col gap-3">
-        <p className="text-sm font-medium">What matters most to you?</p>
+        <SectionLabel>What matters most to you?</SectionLabel>
         {PRIORITIES.map((priority) => (
-          <label key={priority.key} className="flex items-center justify-between gap-3 text-sm">
+          <label
+            key={priority.key}
+            className="flex items-center justify-between gap-3 text-sm text-coffee"
+          >
             <span>{priority.label}</span>
             <select
-              className="rounded border border-neutral-300 px-2 py-1"
+              className={SELECT_CLASS}
               value={priorities[priority.key]}
               disabled={busy}
               onChange={(e) =>
@@ -146,22 +157,17 @@ export function MonthlyListPlanner({ period, initialList, vendors, drinkOptions 
         ))}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-terracotta">{error}</p>}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={generateWithAi}
-          className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-        >
+        <Button disabled={busy} onClick={generateWithAi}>
           {busy ? "Planning…" : "Plan my month with AI"}
-        </button>
+        </Button>
         <button
           type="button"
           disabled={busy}
           onClick={generateUsual}
-          className="text-sm text-neutral-500 hover:underline disabled:opacity-50"
+          className="text-sm font-semibold text-coffee hover:underline disabled:opacity-50"
         >
           Just use my usual every day
         </button>
@@ -170,154 +176,172 @@ export function MonthlyListPlanner({ period, initialList, vendors, drinkOptions 
             type="button"
             disabled={busy}
             onClick={() => setPlanning(false)}
-            className="text-sm text-neutral-500 hover:underline disabled:opacity-50"
+            className="text-sm text-muted hover:underline disabled:opacity-50"
           >
             Cancel
           </button>
         )}
       </div>
-    </div>
+    </Card>
   );
 
   if (!list) return questionnaire;
 
   const confirmed = list.status === "confirmed";
   const plannedDays = list.entries.filter((entry) => !entry.skipped && entry.vendorId).length;
+  const totalSen = list.entries.reduce(
+    (sum, entry) => (!entry.skipped && entry.priceSen !== null ? sum + entry.priceSen : sum),
+    0,
+  );
 
   return (
     <div className="flex flex-col gap-4">
-      {error && !planning && <p className="text-sm text-red-600">{error}</p>}
+      {error && !planning && <p className="text-sm text-terracotta">{error}</p>}
 
       {planning && !confirmed && questionnaire}
 
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold">{monthLabel(period)}</h2>
-          <p className="text-sm text-neutral-500">
-            {confirmed ? "Confirmed · " : "Proposed · "}
-            {plannedDays} coffee{plannedDays === 1 ? "" : "s"} planned · delivered at {list.time}
+        <div className="flex flex-col gap-1">
+          <StatusPill tone={confirmed ? "delivered" : "scheduled"}>
+            {confirmed ? "Confirmed" : "Proposed"}
+          </StatusPill>
+          <p className="text-sm text-coffee">
+            {plannedDays} coffee{plannedDays === 1 ? "" : "s"} · delivered at {list.time}
           </p>
         </div>
-        {confirmed ? (
-          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800">
-            Confirmed
-          </span>
-        ) : (
-          !planning && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setPlanning(true)}
-              className="rounded border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
-            >
-              Re-plan
-            </button>
-          )
+        {!confirmed && !planning && (
+          <Button variant="outline" disabled={busy} onClick={() => setPlanning(true)}>
+            Re-plan
+          </Button>
         )}
       </div>
 
       {confirmed && (
-        <p className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+        <Notice tone="sage" icon="✓">
           Your month is set. Each day&apos;s order is scheduled — change or skip an individual day
           from the dashboard up to its 6:00 AM cutoff.
-        </p>
+        </Notice>
       )}
 
-      <ul className="flex flex-col divide-y divide-neutral-100 rounded-md border border-neutral-200">
+      <SectionLabel>
+        {monthLabel(period)} · {plannedDays} delivery days
+      </SectionLabel>
+
+      <ul className="flex flex-col gap-3">
         {list.entries.map((entry) => (
-          <li
+          <Card
+            as="li"
             key={entry.date}
-            className={`flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm ${
-              entry.skipped ? "bg-neutral-50 text-neutral-400" : ""
-            }`}
+            className={cn("flex flex-col gap-2 p-4", entry.skipped && "opacity-60")}
           >
-            <span className="w-28 shrink-0 font-medium text-neutral-900">
-              {WEEKDAY_LABELS[entry.weekday]} {entry.date.slice(8)}
-            </span>
-
-            {confirmed ? (
-              <>
-                <span className="flex-1">{entry.skipped ? "Skipped" : entry.drink.drink}</span>
-                <span className="text-neutral-500">
-                  {entry.skipped ? "" : (entry.vendorName ?? "auto-routed on the day")}
+            <div className="flex items-start gap-3">
+              <div className="flex w-10 shrink-0 flex-col items-center">
+                <span className="font-mono text-[11px] uppercase tracking-wide text-muted">
+                  {WEEKDAY_LABELS[entry.weekday]}
                 </span>
-              </>
-            ) : (
-              <>
-                <select
-                  aria-label={`Drink for ${entry.date}`}
-                  className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-50"
-                  value={entry.drink.drink}
-                  disabled={busy || entry.skipped}
-                  onChange={(e) =>
-                    editDay(entry.date, { drink: { ...entry.drink, drink: e.target.value } })
-                  }
-                >
-                  {drinkOptions.some((o) => o.value === entry.drink.drink) ? null : (
-                    <option value={entry.drink.drink}>{entry.drink.drink}</option>
-                  )}
-                  {drinkOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                <span className="font-mono text-lg text-espresso">{entry.date.slice(8)}</span>
+              </div>
 
-                <select
-                  aria-label={`Vendor for ${entry.date}`}
-                  className="flex-1 rounded border border-neutral-300 px-2 py-1 disabled:opacity-50"
-                  value={entry.vendorId ?? ""}
-                  disabled={busy || entry.skipped}
-                  onChange={(e) => editDay(entry.date, { vendorId: e.target.value || null })}
-                >
-                  <option value="">Auto-route on the day</option>
-                  {vendors.map((vendor) => (
-                    <option key={vendor.id} value={vendor.id}>
-                      {vendor.name}
-                      {!vendor.coversDrink ? " (can't make it)" : ""}
-                    </option>
-                  ))}
-                  {/* Keep a currently-assigned vendor selectable even if it's
-                      not in the area list (e.g. AI-routed). */}
-                  {entry.vendorId && !vendors.some((v) => v.id === entry.vendorId) && (
-                    <option value={entry.vendorId}>{entry.vendorName ?? "Assigned vendor"}</option>
-                  )}
-                </select>
+              {confirmed ? (
+                <div className="flex flex-1 items-start justify-between gap-3">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-semibold text-espresso">
+                      {entry.skipped ? "Skipped" : entry.drink.drink}
+                    </span>
+                    {!entry.skipped && (
+                      <span className="text-sm text-coffee">
+                        {entry.vendorName ?? "auto-routed on the day"}
+                        {entry.priceSen !== null && ` · ${formatMyr(entry.priceSen)}`}
+                      </span>
+                    )}
+                  </div>
+                  {entry.skipped && <StatusPill tone="skipped">Skipped</StatusPill>}
+                </div>
+              ) : (
+                <div className="flex flex-1 flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label={`Drink for ${entry.date}`}
+                      className={SELECT_CLASS}
+                      value={entry.drink.drink}
+                      disabled={busy || entry.skipped}
+                      onChange={(e) =>
+                        editDay(entry.date, { drink: { ...entry.drink, drink: e.target.value } })
+                      }
+                    >
+                      {drinkOptions.some((o) => o.value === entry.drink.drink) ? null : (
+                        <option value={entry.drink.drink}>{entry.drink.drink}</option>
+                      )}
+                      {drinkOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {entry.priceSen !== null && !entry.skipped && (
+                      <span className="font-mono text-sm text-coffee">
+                        {formatMyr(entry.priceSen)}
+                      </span>
+                    )}
+                  </div>
 
-                {entry.priceSen !== null && !entry.skipped && (
-                  <span className="w-16 shrink-0 text-right text-neutral-500">
-                    {formatMyr(entry.priceSen)}
-                  </span>
-                )}
+                  <select
+                    aria-label={`Vendor for ${entry.date}`}
+                    className={cn(SELECT_CLASS, "w-full")}
+                    value={entry.vendorId ?? ""}
+                    disabled={busy || entry.skipped}
+                    onChange={(e) => editDay(entry.date, { vendorId: e.target.value || null })}
+                  >
+                    <option value="">Auto-route on the day</option>
+                    {vendors.map((vendor) => (
+                      <option key={vendor.id} value={vendor.id}>
+                        {vendor.name}
+                        {!vendor.coversDrink ? " (can't make it)" : ""}
+                      </option>
+                    ))}
+                    {/* Keep a currently-assigned vendor selectable even if it's
+                        not in the area list (e.g. AI-routed). */}
+                    {entry.vendorId && !vendors.some((v) => v.id === entry.vendorId) && (
+                      <option value={entry.vendorId}>
+                        {entry.vendorName ?? "Assigned vendor"}
+                      </option>
+                    )}
+                  </select>
 
-                <label className="flex shrink-0 items-center gap-1 text-neutral-500">
-                  <input
-                    type="checkbox"
-                    checked={entry.skipped}
-                    disabled={busy}
-                    onChange={(e) => editDay(entry.date, { skipped: e.target.checked })}
-                  />
-                  Skip
-                </label>
-              </>
-            )}
+                  <label className="flex items-center gap-2 text-sm text-muted">
+                    <input
+                      type="checkbox"
+                      checked={entry.skipped}
+                      disabled={busy}
+                      onChange={(e) => editDay(entry.date, { skipped: e.target.checked })}
+                    />
+                    Skip this day
+                  </label>
+                </div>
+              )}
+            </div>
 
             {entry.rationale && !entry.skipped && (
-              <p className="w-full pl-28 text-xs text-neutral-400 italic">{entry.rationale}</p>
+              <p className="pl-[52px] text-xs text-muted italic">{entry.rationale}</p>
             )}
-          </li>
+          </Card>
         ))}
       </ul>
 
       {!confirmed && (
-        <button
-          type="button"
-          disabled={busy || plannedDays === 0}
-          onClick={confirm}
-          className="self-start rounded-md bg-amber-800 px-5 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-        >
-          {busy ? "Confirming…" : `Confirm ${monthLabel(period)}`}
-        </button>
+        <Card className="flex items-center justify-between gap-3 p-4">
+          <div className="flex flex-col">
+            <span className="font-semibold text-espresso">
+              {plannedDays} coffee{plannedDays === 1 ? "" : "s"} this month
+            </span>
+            {totalSen > 0 && (
+              <span className="font-mono text-sm text-coffee">≈ {formatMyr(totalSen)}</span>
+            )}
+          </div>
+          <Button disabled={busy || plannedDays === 0} onClick={confirm}>
+            {busy ? "Confirming…" : "Confirm month"}
+          </Button>
+        </Card>
       )}
     </div>
   );
