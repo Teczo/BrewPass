@@ -12,9 +12,9 @@ export const dynamic = "force-dynamic";
 
 function Notice({ children }: { children: React.ReactNode }) {
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold tracking-tight">Choose your vendor</h1>
-      <div className="flex flex-col gap-3 text-neutral-500">{children}</div>
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 p-6">
+      <h1 className="font-display text-[26px] leading-tight text-espresso">Choose your vendor</h1>
+      <div className="flex flex-col gap-3 text-coffee">{children}</div>
     </main>
   );
 }
@@ -33,7 +33,7 @@ export default async function VendorSelectionPage() {
     return (
       <Notice>
         <p>Set your usual drink and schedule first.</p>
-        <Link href="/onboarding/preferences" className="text-amber-800 hover:underline">
+        <Link href="/onboarding/preferences" className="font-semibold text-coffee hover:underline">
           Set up preferences
         </Link>
       </Notice>
@@ -48,7 +48,7 @@ export default async function VendorSelectionPage() {
     return (
       <Notice>
         <p>Add a default delivery location first.</p>
-        <Link href="/onboarding/locations" className="text-amber-800 hover:underline">
+        <Link href="/onboarding/locations" className="font-semibold text-coffee hover:underline">
           Manage locations
         </Link>
       </Notice>
@@ -72,18 +72,14 @@ export default async function VendorSelectionPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Choose your vendor</h1>
-          <p className="text-sm text-neutral-500">
-            Pick a preferred vendor or let the assistant recommend one. The platform auto-routes
-            when your pick isn&apos;t available.
-          </p>
-        </div>
-        <Link href="/dashboard" className="text-sm text-amber-800 hover:underline">
-          Back
-        </Link>
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 p-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-[26px] leading-tight text-espresso">
+          Choose your vendor
+        </h1>
+        <p className="text-sm text-coffee">
+          Two doors to the same calm result. Takes effect only when you confirm.
+        </p>
       </header>
       <VendorSelector
         vendors={cards}
