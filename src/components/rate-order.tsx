@@ -37,7 +37,7 @@ export function RateOrder({ orderId, initialScore }: { orderId: string; initialS
 
   if (done) {
     return (
-      <span className="text-xs text-neutral-500">
+      <span className="text-xs text-muted">
         Rated {score}
         <span className="text-amber-500">★</span>
       </span>
@@ -56,13 +56,13 @@ export function RateOrder({ orderId, initialScore }: { orderId: string; initialS
           onMouseLeave={() => setHover(0)}
           onClick={() => submit(value)}
           className={`text-lg leading-none disabled:opacity-50 ${
-            value <= (hover || score || 0) ? "text-amber-500" : "text-neutral-300"
+            value <= (hover || score || 0) ? "text-amber-500" : "text-hairline"
           }`}
         >
           ★
         </button>
       ))}
-      {error && <span className="ml-1 text-xs text-red-600">{error}</span>}
+      {error && <span className="ml-1 text-xs text-terracotta">{error}</span>}
     </span>
   );
 }

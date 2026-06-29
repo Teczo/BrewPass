@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 
+import { Card } from "@/components/ui/card";
+import { StatusPill } from "@/components/ui/status-pill";
+
 /**
  * In-app delivery tracking (v2.1). Polls the order's tracking endpoint and
  * renders the driver on our own Google map (Static Maps), so the subscriber
@@ -79,9 +82,7 @@ export function DeliveryTracker({ orderId }: { orderId: string }) {
 
   if (!data && !error) {
     return (
-      <section className="rounded-md border border-neutral-200 p-4 text-sm text-neutral-500">
-        Loading delivery tracking…
-      </section>
+      <Card className="p-4 text-sm text-muted">Loading delivery tracking…</Card>
     );
   }
 
@@ -91,12 +92,10 @@ export function DeliveryTracker({ orderId }: { orderId: string }) {
     : "On its way";
 
   return (
-    <section className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4">
+    <Card className="flex flex-col gap-3 p-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Track your delivery</h2>
-        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900">
-          {statusLabel}
-        </span>
+        <h2 className="font-semibold text-espresso">Track your delivery</h2>
+        <StatusPill tone="preparing">{statusLabel}</StatusPill>
       </div>
 
       {mapUrl ? (
@@ -104,10 +103,10 @@ export function DeliveryTracker({ orderId }: { orderId: string }) {
         <img
           src={mapUrl}
           alt={`Driver location en route to ${data?.dropoff.label}`}
-          className="w-full rounded-md border border-neutral-100"
+          className="w-full rounded-2xl border border-hairline"
         />
       ) : (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-coffee">
           {data?.driverLocation
             ? "Driver is on the way."
             : "We'll show the driver on the map as soon as they're en route."}
@@ -115,11 +114,11 @@ export function DeliveryTracker({ orderId }: { orderId: string }) {
       )}
 
       {data?.driver && (
-        <p className="text-sm text-neutral-600">
-          <span className="font-medium text-neutral-900">{data.driver.name}</span>
+        <p className="text-sm text-coffee">
+          <span className="font-semibold text-espresso">{data.driver.name}</span>
           {data.driver.plate && ` · ${data.driver.plate}`}
           {data.driver.phone && (
-            <a href={`tel:${data.driver.phone}`} className="ml-2 text-amber-800 hover:underline">
+            <a href={`tel:${data.driver.phone}`} className="ml-2 font-semibold text-coffee hover:underline">
               Call
             </a>
           )}
@@ -131,13 +130,13 @@ export function DeliveryTracker({ orderId }: { orderId: string }) {
           href={data.trackingUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm text-amber-800 hover:underline"
+          className="text-sm font-semibold text-coffee hover:underline"
         >
           Trouble loading? Open live tracking →
         </a>
       )}
 
-      {error && <p className="text-xs text-neutral-400">{error} — retrying…</p>}
-    </section>
+      {error && <p className="text-xs text-muted">{error} — retrying…</p>}
+    </Card>
   );
 }
