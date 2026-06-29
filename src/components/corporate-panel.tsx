@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+
 /**
  * The create-company form. Per Phase J.4 the old seat-model manager (member
  * email-add + seat checkout) is replaced by the owner dashboard
@@ -45,31 +48,25 @@ export function CreateCorporateAccount() {
 
   return (
     <form
-      className="flex max-w-md flex-col gap-3"
+      className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         run("/api/corporate", "POST", { company });
       }}
     >
-      <label className="flex flex-col gap-1 text-sm font-medium">
-        Company name
-        <input
-          className="rounded-md border border-neutral-300 px-3 py-2"
-          value={company}
-          onChange={(e) => setCompany(e.target.value)}
-          required
-          minLength={2}
-          maxLength={160}
-        />
-      </label>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button
-        type="submit"
-        disabled={busy}
-        className="rounded-md bg-amber-800 px-4 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-      >
+      <Field
+        id="company"
+        label="Company name"
+        value={company}
+        onChange={(e) => setCompany(e.target.value)}
+        required
+        minLength={2}
+        maxLength={160}
+      />
+      {error && <p className="text-sm text-terracotta">{error}</p>}
+      <Button type="submit" disabled={busy} fullWidth>
         Create corporate account
-      </button>
+      </Button>
     </form>
   );
 }

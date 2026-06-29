@@ -3,6 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button, buttonClasses } from "@/components/ui/button";
+import { Card, SectionLabel } from "@/components/ui/card";
+import { Chip } from "@/components/ui/chip";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
+import { cn } from "@/lib/cn";
 import type { DrinkOptions } from "@/lib/taxonomy-options";
 
 const WEEKDAYS: Array<{ value: number; label: string }> = [
@@ -14,6 +19,9 @@ const WEEKDAYS: Array<{ value: number; label: string }> = [
   { value: 6, label: "Sat" },
   { value: 7, label: "Sun" },
 ];
+
+const SELECT_CLASS =
+  "rounded-xl border border-border bg-field px-3 py-2 text-sm font-medium text-ink focus:border-coffee focus:outline-none";
 
 export interface DrinkSpecJson {
   drink: string;
@@ -124,10 +132,10 @@ function useAction() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4">
-      <h2 className="font-semibold">{title}</h2>
+    <Card className="flex flex-col gap-3 p-5">
+      <SectionLabel>{title}</SectionLabel>
       {children}
-    </section>
+    </Card>
   );
 }
 
@@ -143,10 +151,10 @@ function DrinkFields({
   const milks = options.milks.length > 0 ? options.milks : [{ value: spec.milk, label: spec.milk }];
   return (
     <div className="grid gap-2 sm:grid-cols-2">
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-coffee">
         Drink
         <select
-          className="rounded-md border border-neutral-300 px-2 py-1.5"
+          className={SELECT_CLASS}
           value={spec.drink}
           onChange={(e) => onChange({ ...spec, drink: e.target.value })}
         >
@@ -157,10 +165,10 @@ function DrinkFields({
           ))}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-coffee">
         Size
         <select
-          className="rounded-md border border-neutral-300 px-2 py-1.5"
+          className={SELECT_CLASS}
           value={spec.size}
           onChange={(e) => onChange({ ...spec, size: e.target.value as DrinkSpecJson["size"] })}
         >
@@ -171,10 +179,10 @@ function DrinkFields({
           ))}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-coffee">
         Milk
         <select
-          className="rounded-md border border-neutral-300 px-2 py-1.5"
+          className={SELECT_CLASS}
           value={spec.milk}
           onChange={(e) => onChange({ ...spec, milk: e.target.value })}
         >
@@ -185,10 +193,10 @@ function DrinkFields({
           ))}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-coffee">
         Strength
         <select
-          className="rounded-md border border-neutral-300 px-2 py-1.5"
+          className={SELECT_CLASS}
           value={spec.strength}
           onChange={(e) =>
             onChange({ ...spec, strength: e.target.value as DrinkSpecJson["strength"] })
@@ -201,13 +209,13 @@ function DrinkFields({
           ))}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-coffee">
         Sugar
         <input
           type="number"
           min={0}
           max={5}
-          className="rounded-md border border-neutral-300 px-2 py-1.5"
+          className={SELECT_CLASS}
           value={spec.sugar}
           onChange={(e) =>
             onChange({ ...spec, sugar: Math.max(0, Math.min(5, Number(e.target.value))) })
@@ -245,9 +253,9 @@ function OfficeDefaultsForm({
 
   if (locations.length === 0) {
     return (
-      <p className="text-sm text-neutral-500">
+      <p className="text-sm text-muted">
         Add an office location under{" "}
-        <a href="/onboarding/locations" className="text-amber-800 hover:underline">
+        <a href="/onboarding/locations" className="font-semibold text-coffee hover:underline">
           Locations
         </a>{" "}
         first — office coffee is delivered there.
@@ -257,41 +265,37 @@ function OfficeDefaultsForm({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-neutral-500">
+      <p className="text-sm text-coffee">
         The default coffee, schedule, and delivery location every member&apos;s office coffee starts
         from. In bundle mode this drink is overridden by the bundle coffee below.
       </p>
       <DrinkFields spec={spec} options={drinkOptions} onChange={setSpec} />
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-2">
         {WEEKDAYS.map((d) => (
-          <button
+          <Chip
             key={d.value}
-            type="button"
+            selected={days.includes(d.value)}
             onClick={() => toggleDay(d.value)}
-            className={`rounded-md border px-2 py-1 text-xs font-medium ${
-              days.includes(d.value)
-                ? "border-amber-800 bg-amber-800 text-white"
-                : "border-neutral-300 text-neutral-600"
-            }`}
+            className="px-3"
           >
             {d.label}
-          </button>
+          </Chip>
         ))}
       </div>
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-coffee">
           Time
           <input
             type="time"
-            className="rounded-md border border-neutral-300 px-2 py-1.5"
+            className={SELECT_CLASS}
             value={time}
             onChange={(e) => setTime(e.target.value)}
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-coffee">
           Office location
           <select
-            className="rounded-md border border-neutral-300 px-2 py-1.5"
+            className={SELECT_CLASS}
             value={locationId}
             onChange={(e) => setLocationId(e.target.value)}
           >
@@ -302,8 +306,7 @@ function OfficeDefaultsForm({
             ))}
           </select>
         </label>
-        <button
-          type="button"
+        <Button
           disabled={busy || days.length === 0 || !locationId}
           onClick={() =>
             run("/api/corporate/office-defaults", "PUT", {
@@ -312,29 +315,24 @@ function OfficeDefaultsForm({
               locationId,
             })
           }
-          className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
         >
           Save office defaults
-        </button>
+        </Button>
       </div>
     </div>
   );
 }
 
 function intentBadge(order: RosterOrderJson | null) {
-  if (!order) return <span className="text-xs text-neutral-400">—</span>;
-  const cls =
-    order.intent === "skip"
-      ? "bg-neutral-100 text-neutral-500"
-      : order.intent === "want"
-        ? "bg-amber-100 text-amber-900"
-        : "bg-green-100 text-green-800";
+  if (!order) return <span className="text-xs text-muted">—</span>;
+  const tone: StatusTone =
+    order.intent === "skip" ? "skipped" : order.intent === "want" ? "scheduled" : "active";
   const label =
     order.intent === "skip" ? "Skipped" : order.intent === "want" ? "Want" : order.status;
   return (
     <span className="flex flex-col gap-0.5">
-      <span className={`w-fit rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{label}</span>
-      <span className="text-xs text-neutral-400">{order.drink}</span>
+      <StatusPill tone={tone}>{label}</StatusPill>
+      <span className="text-xs text-muted">{order.drink}</span>
     </span>
   );
 }
@@ -348,9 +346,11 @@ export function CorporateOwnerDashboard({
 }: OwnerDashboardProps) {
   const { run, busy, error } = useAction();
   const [bundleSpec, setBundleSpec] = useState<DrinkSpecJson>(account.bundleDrink ?? DEFAULT_SPEC);
+  const [cap, setCap] = useState("");
 
   const canToggleWant = account.memberCanDecline;
   const reusableCode = joinCodes.find((c) => c.type === "reusable" && c.active) ?? null;
+  const singleUseCodes = joinCodes.filter((c) => c.type === "single_use" && c.active);
 
   async function copyCode(code: string) {
     try {
@@ -360,29 +360,46 @@ export function CorporateOwnerDashboard({
     }
   }
 
+  // Setting a limit rotates the standing code (the API has no edit-without-rotate),
+  // so the cap is applied as part of generating/rotating.
+  function generateReusable() {
+    const trimmed = cap.trim();
+    const capValue = trimmed ? Number(trimmed) : undefined;
+    void run("/api/corporate/join-codes", "POST", {
+      type: "reusable",
+      ...(capValue && capValue > 0 ? { redemptionCap: capValue } : {}),
+    });
+  }
+
   return (
-    <div className="flex flex-col gap-6">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+    <div className="flex flex-col gap-5">
+      {error && <p className="text-sm text-terracotta">{error}</p>}
 
       <Section title="Office coffee setup">
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <span>
-            <span className="font-medium">Company card</span>
-            <span className="ml-2 text-neutral-500">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-espresso">Company card</span>
+              <StatusPill tone={account.cardOnFile ? "active" : "skipped"}>
+                {account.cardOnFile ? "Active" : "Not set"}
+              </StatusPill>
+            </div>
+            <span className="text-sm text-coffee">
               {account.cardOnFile
-                ? "On file — office coffee is billed here per delivery."
-                : "Not set — office coffee can't be generated until a card is on file."}
+                ? "Every delivered office coffee is charged here — never a member's card."
+                : "Office coffee can't be generated until a card is on file."}
             </span>
-          </span>
+          </div>
           <button
             type="button"
             disabled={busy}
             onClick={() => run("/api/corporate/company-card", "POST")}
-            className="shrink-0 rounded-md border border-amber-800 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:opacity-50"
+            className={buttonClasses("secondary", "shrink-0")}
           >
-            {account.cardOnFile ? "Replace card" : "Add company card"}
+            {account.cardOnFile ? "Replace card" : "Add card"}
           </button>
         </div>
+        <p className="text-sm text-muted">No seats — you pay per delivered coffee.</p>
         <OfficeDefaultsForm
           account={account}
           locations={locations}
@@ -393,136 +410,167 @@ export function CorporateOwnerDashboard({
       </Section>
 
       <Section title="Member autonomy">
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-coffee">
           Control how much members manage their own office coffee. These rules are enforced on the
           server for every member action.
         </p>
-        <div className="flex flex-col gap-2 text-sm">
-          <div className="flex flex-wrap gap-2">
-            {(["individual", "bundle"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  run(
-                    "/api/corporate/settings",
-                    "PUT",
-                    // Bundle mode requires a bundle coffee — send the current one
-                    // so the switch is atomic and passes server validation.
-                    mode === "bundle"
-                      ? { selectionMode: "bundle", bundleDrink: account.bundleDrink ?? bundleSpec }
-                      : { selectionMode: "individual" },
-                  )
-                }
-                className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
-                  account.selectionMode === mode
-                    ? "border-amber-800 bg-amber-800 text-white"
-                    : "border-neutral-300 text-neutral-600"
-                } disabled:opacity-50`}
-              >
-                {mode === "individual"
-                  ? "Individual — each picks their own"
-                  : "Bundle — one for all"}
-              </button>
-            ))}
-          </div>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={account.memberSelfSelect}
-              disabled={busy}
-              onChange={(e) =>
-                run("/api/corporate/settings", "PUT", { memberSelfSelect: e.target.checked })
-              }
-            />
-            Members may choose/edit their own office coffee (individual mode only)
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={account.memberCanDecline}
-              disabled={busy}
-              onChange={(e) =>
-                run("/api/corporate/settings", "PUT", { memberCanDecline: e.target.checked })
-              }
-            />
-            Members (and you, on their behalf) may skip a day&apos;s office coffee
-          </label>
-        </div>
-
-        {account.selectionMode === "bundle" && (
-          <div className="flex flex-col gap-2 rounded-md bg-amber-50 p-3">
-            <p className="text-sm font-medium text-amber-900">Bundle coffee — everyone gets this</p>
-            <DrinkFields spec={bundleSpec} options={drinkOptions} onChange={setBundleSpec} />
+        <div className="flex gap-2 rounded-full bg-paper p-1">
+          {(["individual", "bundle"] as const).map((mode) => (
             <button
+              key={mode}
               type="button"
               disabled={busy}
+              onClick={() =>
+                run(
+                  "/api/corporate/settings",
+                  "PUT",
+                  // Bundle mode requires a bundle coffee — send the current one
+                  // so the switch is atomic and passes server validation.
+                  mode === "bundle"
+                    ? { selectionMode: "bundle", bundleDrink: account.bundleDrink ?? bundleSpec }
+                    : { selectionMode: "individual" },
+                )
+              }
+              className={cn(
+                "flex-1 rounded-full px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50",
+                account.selectionMode === mode ? "bg-espresso text-white" : "text-coffee",
+              )}
+            >
+              {mode === "individual" ? "Individual — each picks" : "Bundle — one for all"}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 text-sm text-coffee">
+          <input
+            type="checkbox"
+            checked={account.memberSelfSelect}
+            disabled={busy}
+            onChange={(e) =>
+              run("/api/corporate/settings", "PUT", { memberSelfSelect: e.target.checked })
+            }
+          />
+          Members may choose/edit their own office coffee (individual mode only)
+        </label>
+        <label className="flex items-center gap-2 text-sm text-coffee">
+          <input
+            type="checkbox"
+            checked={account.memberCanDecline}
+            disabled={busy}
+            onChange={(e) =>
+              run("/api/corporate/settings", "PUT", { memberCanDecline: e.target.checked })
+            }
+          />
+          Members (and you, on their behalf) may skip a day&apos;s office coffee
+        </label>
+
+        {account.selectionMode === "bundle" && (
+          <div className="flex flex-col gap-2 rounded-2xl bg-amber p-4">
+            <p className="text-sm font-semibold text-amber-ink">Bundle coffee — everyone gets this</p>
+            <DrinkFields spec={bundleSpec} options={drinkOptions} onChange={setBundleSpec} />
+            <Button
+              disabled={busy}
               onClick={() => run("/api/corporate/settings", "PUT", { bundleDrink: bundleSpec })}
-              className="w-fit rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+              className="self-start"
             >
               Save bundle coffee
-            </button>
+            </Button>
           </div>
         )}
       </Section>
 
       <Section title="Join code">
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-coffee">
           Share a code so staff self-join — no emails to manage. Joining never touches their
           personal BrewPass account.
         </p>
         {reusableCode ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="rounded-md bg-neutral-100 px-3 py-1.5 font-mono text-lg tracking-widest">
-              {reusableCode.code}
-            </code>
-            <span className="text-xs text-neutral-500">
-              {reusableCode.redeemedCount} joined
-              {reusableCode.redemptionCap !== null ? ` / ${reusableCode.redemptionCap} cap` : ""}
-            </span>
-            <button
-              type="button"
-              onClick={() => copyCode(reusableCode.code)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-            >
-              Copy
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => run("/api/corporate/join-codes", "POST", { type: "reusable" })}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-            >
-              Rotate
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                run("/api/corporate/join-codes", "DELETE", { code: reusableCode.code })
-              }
-              className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-            >
-              Revoke
-            </button>
-          </div>
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="rounded-xl bg-paper px-3 py-1.5 font-mono text-lg tracking-widest text-espresso">
+                {reusableCode.code}
+              </code>
+              <span className="font-mono text-xs text-muted">
+                {reusableCode.redeemedCount} joined
+                {reusableCode.redemptionCap !== null ? ` · limit ${reusableCode.redemptionCap}` : ""}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => copyCode(reusableCode.code)}
+                className={buttonClasses("secondary")}
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={generateReusable}
+                className={buttonClasses("secondary")}
+              >
+                Rotate
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => run("/api/corporate/join-codes", "DELETE", { code: reusableCode.code })}
+                className={buttonClasses("danger")}
+              >
+                Revoke
+              </button>
+            </div>
+          </>
         ) : (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => run("/api/corporate/join-codes", "POST", { type: "reusable" })}
-            className="w-fit rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-          >
+          <Button disabled={busy} onClick={generateReusable} className="self-start">
             Generate join code
-          </button>
+          </Button>
         )}
+
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1 text-sm text-coffee">
+            Join limit (optional, applied on generate/rotate)
+            <input
+              type="number"
+              min={1}
+              placeholder="no limit"
+              className={SELECT_CLASS}
+              value={cap}
+              onChange={(e) => setCap(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-hairline pt-3">
+          <p className="text-sm text-coffee">
+            Tighter control? Mint single-use invite codes — each works once.
+          </p>
+          {singleUseCodes.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {singleUseCodes.map((c) => (
+                <code
+                  key={c.code}
+                  className="rounded-lg bg-paper px-2 py-1 font-mono text-sm tracking-widest text-espresso"
+                >
+                  {c.code}
+                </code>
+              ))}
+            </div>
+          )}
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => run("/api/corporate/join-codes", "POST", { type: "single_use" })}
+            className="self-start"
+          >
+            Mint single-use code
+          </Button>
+        </div>
       </Section>
 
       <Section title={`Team (${roster.members.length})`}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="text-xs text-neutral-400 uppercase">
+            <thead className="text-xs text-muted uppercase">
               <tr>
                 <th className="py-2">Member</th>
                 <th className="py-2">Office coffee</th>
@@ -532,17 +580,17 @@ export function CorporateOwnerDashboard({
             </thead>
             <tbody>
               {roster.members.map((member) => (
-                <tr key={member.membershipId} className="border-t border-neutral-100 align-top">
+                <tr key={member.membershipId} className="border-t border-hairline align-top">
                   <td className="py-2">
-                    <span className="font-medium">{member.name || "(no name)"}</span>
+                    <span className="font-semibold text-espresso">{member.name || "(no name)"}</span>
                     <br />
-                    <span className="text-xs text-neutral-500">{member.email}</span>
+                    <span className="text-xs text-muted">{member.email}</span>
                   </td>
                   <td className="py-2">
                     {member.officeSet ? (
-                      <span className="text-xs text-green-700">Set up</span>
+                      <StatusPill tone="active">Set up</StatusPill>
                     ) : (
-                      <span className="text-xs text-neutral-400">Not set</span>
+                      <span className="text-xs text-muted">Not set</span>
                     )}
                   </td>
                   {(["today", "tomorrow"] as const).map((day) => {
@@ -561,7 +609,7 @@ export function CorporateOwnerDashboard({
                                 action: order.intent === "skip" ? "want" : "skip",
                               })
                             }
-                            className="mt-1 block text-xs text-amber-800 hover:underline disabled:opacity-50"
+                            className="mt-1 block text-xs font-semibold text-coffee hover:underline disabled:opacity-50"
                           >
                             {order.intent === "skip" ? "Mark want" : "Skip"}
                           </button>
@@ -573,7 +621,7 @@ export function CorporateOwnerDashboard({
               ))}
               {roster.members.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-3 text-sm text-neutral-400">
+                  <td colSpan={4} className="py-3 text-sm text-muted">
                     No members yet — share your join code above.
                   </td>
                 </tr>

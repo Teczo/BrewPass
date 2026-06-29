@@ -3,6 +3,8 @@
 import { useState } from "react";
 
 import { DeliveryTracker } from "@/components/delivery-tracker";
+import { Card, SectionLabel } from "@/components/ui/card";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 
 export interface OfficeCoffeeItemJson {
   orderId: string;
@@ -17,10 +19,14 @@ export interface OfficeCoffeeItemJson {
   trackable: boolean;
 }
 
-const STATUS_CLASS: Record<string, string> = {
-  delivered: "bg-green-100 text-green-800",
-  out_for_delivery: "bg-amber-100 text-amber-900",
-  failed: "bg-red-100 text-red-700",
+const STATUS_TONES: Record<string, StatusTone> = {
+  delivered: "delivered",
+  out_for_delivery: "preparing",
+  preparing: "preparing",
+  scheduled: "scheduled",
+  confirmed: "scheduled",
+  failed: "failed",
+  skipped: "skipped",
 };
 
 /**
@@ -36,46 +42,45 @@ export function OfficeCoffeeTracker({ items }: { items: OfficeCoffeeItemJson[] }
   if (items.length === 0) return null;
 
   return (
-    <section className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4">
-      <h2 className="font-semibold">Office coffee</h2>
-      <ul className="flex flex-col gap-2">
+    <section className="flex flex-col gap-3">
+      <SectionLabel>Office coffee</SectionLabel>
+      <ul className="flex flex-col gap-3">
         {items.map((item) => {
-          const arriving = item.status === "delivered" ? "Delivered" : `Arriving ~${item.etaLabel}`;
+          const arriving =
+            item.status === "delivered" ? "Delivered" : `Arriving ~${item.etaLabel}`;
           return (
-            <li key={item.orderId} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-neutral-700">
-                  <span className="font-medium text-neutral-900">{arriving}</span> ·{" "}
-                  {item.drinkName} · {item.locationLabel}
-                  <span className="block text-xs text-neutral-400">
+            <Card as="li" key={item.orderId} className="flex flex-col gap-2 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-semibold text-espresso">{arriving}</span>
+                  <span className="text-sm text-coffee">
+                    {item.drinkName} · {item.locationLabel}
+                  </span>
+                  <span className="text-xs text-muted">
                     {item.date} · {item.detail} · {item.company}
                   </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      STATUS_CLASS[item.status] ?? "bg-neutral-100 text-neutral-600"
-                    }`}
-                  >
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <StatusPill tone={STATUS_TONES[item.status] ?? "scheduled"}>
                     {item.statusLabel}
-                  </span>
+                  </StatusPill>
                   {item.trackable && (
                     <button
                       type="button"
                       onClick={() =>
                         setOpenMap((cur) => (cur === item.orderId ? null : item.orderId))
                       }
-                      className="text-xs text-amber-800 hover:underline"
+                      className="text-xs font-semibold text-coffee hover:underline"
                     >
                       {openMap === item.orderId ? "Hide map" : "Track"}
                     </button>
                   )}
-                </span>
+                </div>
               </div>
               {item.trackable && openMap === item.orderId && (
                 <DeliveryTracker orderId={item.orderId} />
               )}
-            </li>
+            </Card>
           );
         })}
       </ul>

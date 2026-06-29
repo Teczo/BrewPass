@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   corporateAccountsCollection,
   corporateMembershipsCollection,
+  locationsCollection,
   preferencesCollection,
 } from "@/lib/collections";
 import { canMemberSelectOffice } from "@/lib/corporate/autonomy";
@@ -47,13 +48,22 @@ export async function GET() {
     .toArray();
   const accountById = new Map(accountDocs.map((a) => [a._id.toHexString(), a]));
 
+  const locations = await locationsCollection();
   const offices = await Promise.all(
     memberDocs.map(async (membership) => {
       const account = accountById.get(membership.corporateAccountId.toHexString());
       const preference = account ? await getOrSeedOfficePreference(account, membership) : null;
+      // Resolve the owner-controlled office location label for read-only display.
+      const locationDoc = preference
+        ? await locations.findOne({ _id: preference.defaultLocationId })
+        : null;
       return {
         membershipId: membership._id.toHexString(),
         company: account?.company ?? null,
+        // Surfaces existing server state for the UI; the PUT remains the
+        // authoritative gate (rule #18), so this never relaxes enforcement.
+        canSelfSelect: account ? canMemberSelectOffice(account) : false,
+        locationLabel: locationDoc?.label ?? null,
         preference: preference ? preferenceToJson(preference) : null,
       };
     }),

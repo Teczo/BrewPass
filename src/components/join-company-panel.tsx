@@ -3,11 +3,24 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Card, SectionLabel } from "@/components/ui/card";
+import { Input } from "@/components/ui/field";
+import { Notice } from "@/components/ui/notice";
+import { StatusPill } from "@/components/ui/status-pill";
+
 export interface MemberOfficeJson {
   membershipId: string;
   company: string;
   joinedVia: string;
 }
+
+const REASSURANCES = [
+  "This won't touch your personal BrewPass",
+  "Your plan & preferences stay exactly as they are",
+  "Office coffee is billed to the company card, never yours",
+  "You can get a personal and an office coffee the same day",
+];
 
 /**
  * Phase J.4 — the member-side entry point: redeem a join code to belong to a
@@ -45,49 +58,61 @@ export function JoinCompanyPanel({ offices }: { offices: MemberOfficeJson[] }) {
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4">
-      <h2 className="font-semibold">Your offices</h2>
+    <Card className="flex flex-col gap-4 p-5">
       {offices.length > 0 ? (
-        <ul className="flex flex-col gap-1 text-sm text-neutral-600">
-          {offices.map((office) => (
-            <li key={office.membershipId} className="flex items-center justify-between">
-              <span className="font-medium text-neutral-900">{office.company}</span>
-              <span className="text-xs text-neutral-400">joined via {office.joinedVia}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <SectionLabel>Your offices</SectionLabel>
+          <ul className="flex flex-col gap-2">
+            {offices.map((office) => (
+              <li key={office.membershipId} className="flex items-center justify-between gap-3">
+                <span className="font-semibold text-espresso">{office.company}</span>
+                <StatusPill tone="active">Joined</StatusPill>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : (
-        <p className="text-sm text-neutral-500">
-          You&apos;re not in any company yet. Got a join code from your office? Enter it below.
-        </p>
+        <>
+          <h2 className="font-display text-xl text-espresso">Join your company</h2>
+          <p className="text-sm text-coffee">
+            Got a join code from work? Enter it to start getting office coffee — on the
+            company&apos;s card.
+          </p>
+        </>
       )}
 
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-1 flex-col gap-1 text-sm font-medium">
-          Join a company
-          <input
-            className="rounded-md border border-neutral-300 px-3 py-2 font-mono tracking-widest uppercase"
-            placeholder="ABCD2345"
+      <div className="flex items-end gap-2">
+        <div className="flex flex-1 flex-col gap-1.5">
+          <span className="text-xs font-medium text-coffee">Join code</span>
+          <Input
+            className="font-mono tracking-widest uppercase"
+            placeholder="BREW-••••"
             value={code}
             onChange={(e) => setCode(e.target.value)}
             maxLength={20}
           />
-        </label>
-        <button
-          type="button"
-          disabled={busy || code.trim().length < 4}
-          onClick={redeem}
-          className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-        >
+        </div>
+        <Button disabled={busy || code.trim().length < 4} onClick={redeem}>
           Join
-        </button>
+        </Button>
       </div>
-      {joined && (
-        <p className="text-sm text-green-700">
-          Joined {joined} — your office coffee is set up there.
-        </p>
+
+      {joined ? (
+        <Notice tone="sage" icon="✓">
+          You&apos;ve joined {joined}. Your personal coffee is completely untouched — set your
+          office coffee below, or keep the company default.
+        </Notice>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {REASSURANCES.map((line) => (
+            <li key={line} className="flex items-start gap-2 text-sm text-coffee">
+              <span className="text-sage">✓</span>
+              {line}
+            </li>
+          ))}
+        </ul>
       )}
-      {error && <p className="text-sm text-red-600">{error}</p>}
-    </section>
+      {error && <p className="text-sm text-terracotta">{error}</p>}
+    </Card>
   );
 }
