@@ -48,6 +48,13 @@ export interface RoutingRequest {
   nowLocalTime: string;
   /** Vendors to exclude (e.g. ones that already declined this order). */
   excludeVendorIds?: ObjectId[];
+  /**
+   * Phase O.2 §2.5 — emergency same-day reassignment of an already-charged
+   * order whose vendor went offline. Bypasses the per-vendor accept-cutoff gate
+   * (the rescue happens after that cutoff by definition); every other
+   * eligibility check still applies.
+   */
+  bypassAcceptCutoff?: boolean;
 }
 
 /** The KL delivery hour (0–23) of an HH:mm time. */
@@ -113,6 +120,9 @@ export function isNotQualitySuspended(vendor: Vendor): boolean {
  * day already past never does.
  */
 export function isVendorAcceptingAssignment(vendor: Vendor, request: RoutingRequest): boolean {
+  // §2.5 emergency reassignment ignores the accept-cutoff (the rescue is
+  // intentionally after it).
+  if (request.bypassAcceptCutoff) return true;
   const cutoff = vendor.orderAcceptCutoff;
   if (!cutoff) return true;
   if (request.nowLocalDate < request.date) return true;

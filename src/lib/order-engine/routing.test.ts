@@ -242,6 +242,15 @@ describe("isVendorAcceptingAssignment", () => {
     const sameDayLate = { ...baseRequest, nowLocalDate: "2026-06-10", nowLocalTime: "23:00" };
     expect(isVendorAcceptingAssignment(makeVendor(), sameDayLate)).toBe(true);
   });
+
+  it("bypassAcceptCutoff overrides the gate (Phase O.2 §2.5 emergency reassignment)", () => {
+    // Same delivery day, well past the 04:00 cutoff — normally rejected.
+    const pastCutoff = { ...baseRequest, nowLocalDate: "2026-06-10", nowLocalTime: "09:00" };
+    expect(isVendorAcceptingAssignment(vendor, pastCutoff)).toBe(false);
+    expect(isVendorAcceptingAssignment(vendor, { ...pastCutoff, bypassAcceptCutoff: true })).toBe(
+      true,
+    );
+  });
 });
 
 describe("rankCandidates", () => {
