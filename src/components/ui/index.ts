@@ -6,6 +6,7 @@ export { Button, buttonClasses } from "./button";
 export type { ButtonVariant } from "./button";
 export { Card, SectionLabel } from "./card";
 export { Chip } from "./chip";
+export { ErrorBoundary, PanelError } from "./error-boundary";
 export { Field, Input, Label } from "./field";
 export { Notice } from "./notice";
 export { StatusPill } from "./status-pill";

@@ -16,6 +16,7 @@ import {
   AdminSeedTaxonomyButton,
   AdminSetupButton,
 } from "@/components/admin-setup-button";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { getCurrentAdmin } from "@/lib/admin";
 import { getSession } from "@/lib/auth0";
 import { deliveryProvider } from "@/lib/models";
@@ -259,7 +260,9 @@ export default async function AdminPage() {
         </section>
       )}
 
-      <StuckDeliveries rows={stuckRows} />
+      <ErrorBoundary label="stuck deliveries">
+        <StuckDeliveries rows={stuckRows} />
+      </ErrorBoundary>
 
       {failures.length > 0 && (
         <section className="rounded-md border border-red-200 bg-red-50 p-4">
@@ -319,30 +322,38 @@ export default async function AdminPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Commission</h2>
-        <CommissionPanel
-          defaultRateBps={commissionDefaultBps}
-          codeDefaultBps={PLATFORM_DEFAULT_COMMISSION_BPS}
-        />
+        <ErrorBoundary label="the commission panel">
+          <CommissionPanel
+            defaultRateBps={commissionDefaultBps}
+            codeDefaultBps={PLATFORM_DEFAULT_COMMISSION_BPS}
+          />
+        </ErrorBoundary>
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Today&apos;s orders</h2>
-        <AdminOrdersTable
-          orders={orderRows}
-          vendors={vendorRows
-            .filter((vendor) => vendor.status === "active")
-            .map(({ id, name }) => ({ id, name }))}
-        />
+        <ErrorBoundary label="the orders table">
+          <AdminOrdersTable
+            orders={orderRows}
+            vendors={vendorRows
+              .filter((vendor) => vendor.status === "active")
+              .map(({ id, name }) => ({ id, name }))}
+          />
+        </ErrorBoundary>
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Vendors</h2>
-        <AdminVendors vendors={vendorRows} platformDefaultBps={commissionDefaultBps} />
+        <ErrorBoundary label="the vendors table">
+          <AdminVendors vendors={vendorRows} platformDefaultBps={commissionDefaultBps} />
+        </ErrorBoundary>
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Users (latest 100)</h2>
-        <AdminUsers users={userRows} />
+        <ErrorBoundary label="the users table">
+          <AdminUsers users={userRows} />
+        </ErrorBoundary>
       </section>
     </main>
   );

@@ -8,6 +8,7 @@ import { buttonClasses } from "@/components/ui/button";
 import { Card, SectionLabel } from "@/components/ui/card";
 import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { UpcomingOrder } from "@/components/upcoming-order";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Notice } from "@/components/ui/notice";
 import { ADD_ON_LIST } from "@/lib/addons";
 import { getCurrentSubscription } from "@/lib/billing";
@@ -165,7 +166,11 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {overlaps.length > 0 && <OverlapNotice overlaps={overlaps} />}
+      {overlaps.length > 0 && (
+        <ErrorBoundary label="your coffee overlap notice">
+          <OverlapNotice overlaps={overlaps} />
+        </ErrorBoundary>
+      )}
 
       {inCoverageGap && (
         <>
@@ -188,16 +193,20 @@ export default async function DashboardPage() {
       )}
 
       {upcomingOrder && (
-        <UpcomingOrder
-          order={orderToJson(upcomingOrder)}
-          locations={locationDocs.map(locationToJson)}
-          addOnOptions={addOnOptions}
-          drinkOptions={drinkOptionsFrom(await loadActiveTaxonomy()) ?? DEFAULT_DRINK_OPTIONS}
-        />
+        <ErrorBoundary label="your upcoming coffee">
+          <UpcomingOrder
+            order={orderToJson(upcomingOrder)}
+            locations={locationDocs.map(locationToJson)}
+            addOnOptions={addOnOptions}
+            drinkOptions={drinkOptionsFrom(await loadActiveTaxonomy()) ?? DEFAULT_DRINK_OPTIONS}
+          />
+        </ErrorBoundary>
       )}
 
       {upcomingOrder?.status === "out_for_delivery" && (
-        <DeliveryTracker orderId={upcomingOrder._id.toHexString()} />
+        <ErrorBoundary label="delivery tracking">
+          <DeliveryTracker orderId={upcomingOrder._id.toHexString()} />
+        </ErrorBoundary>
       )}
 
       {hasLiveSubscription && (
