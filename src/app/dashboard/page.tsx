@@ -2,35 +2,27 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { DeliveryTracker } from "@/components/delivery-tracker";
-import { HealthCard } from "@/components/health-card";
 import { OfficeCoffeeTracker } from "@/components/office-coffee-tracker";
 import { OverlapNotice } from "@/components/overlap-notice";
 import { RateOrder } from "@/components/rate-order";
+import { buttonClasses } from "@/components/ui/button";
+import { Card, SectionLabel } from "@/components/ui/card";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { UpcomingOrder } from "@/components/upcoming-order";
 import { ADD_ON_LIST } from "@/lib/addons";
 import { getCurrentSubscription } from "@/lib/billing";
 import { listMemberOfficeCoffees } from "@/lib/corporate/office-tracking";
 import { findUserOverlaps } from "@/lib/corporate/overlap";
-import {
-  locationsCollection,
-  ordersCollection,
-  preferencesCollection,
-  ratingsCollection,
-} from "@/lib/collections";
+import { locationsCollection, ordersCollection, ratingsCollection } from "@/lib/collections";
 import { formatMyr } from "@/lib/format";
-import { summarizeHealth } from "@/lib/health";
-import { PLANS } from "@/lib/plans";
-import { personalPreferenceFilter } from "@/lib/preferences";
 import { locationToJson, orderToJson } from "@/lib/serializers";
 import { drinkOptionsFrom, loadActiveTaxonomy } from "@/lib/taxonomy";
 import { DEFAULT_DRINK_OPTIONS } from "@/lib/taxonomy-options";
-import { addDaysLocal, localDateOf } from "@/lib/time";
+import { localDateOf } from "@/lib/time";
 import { getOnboardingStatus, getOrCreateCurrentUser } from "@/lib/users";
 
 // Session-dependent: must render per-request, never be statically prerendered.
 export const dynamic = "force-dynamic";
-
-const WEEKDAY_LABELS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   scheduled: "Scheduled",
@@ -42,6 +34,25 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   failed: "Failed",
 };
 
+const ORDER_STATUS_TONES: Record<string, StatusTone> = {
+  scheduled: "scheduled",
+  confirmed: "scheduled",
+  preparing: "preparing",
+  out_for_delivery: "preparing",
+  delivered: "delivered",
+  skipped: "skipped",
+  failed: "failed",
+};
+
+function formatDeliveryDate(date: string): string {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export default async function DashboardPage() {
   const user = await getOrCreateCurrentUser();
   if (!user) redirect("/auth/login?returnTo=/dashboard");
@@ -50,16 +61,14 @@ export default async function DashboardPage() {
   const status = await getOnboardingStatus(user);
   if (!status.completed) redirect("/onboarding");
 
-  const [locations, preferences, orders, ratings] = await Promise.all([
+  const [locations, orders, ratings] = await Promise.all([
     locationsCollection(),
-    preferencesCollection(),
     ordersCollection(),
     ratingsCollection(),
   ]);
   const today = localDateOf(new Date());
-  const [locationDocs, preference, subscription, upcomingOrder, recentOrders] = await Promise.all([
+  const [locationDocs, subscription, upcomingOrder, recentOrders] = await Promise.all([
     locations.find({ userId: user._id }).sort({ createdAt: 1 }).toArray(),
-    preferences.findOne(personalPreferenceFilter(user._id)),
     getCurrentSubscription(user._id),
     orders.findOne({ userId: user._id, date: { $gte: today } }, { sort: { date: 1 } }),
     orders
@@ -86,26 +95,6 @@ export default async function DashboardPage() {
     ).map((rating) => [rating.orderId.toHexString(), rating.score]),
   );
 
-  const defaultLocation = preference
-    ? locationDocs.find((location) => location._id.equals(preference.defaultLocationId))
-    : undefined;
-
-  // Opt-in health insights: consumed coffees over the last 7 KL days.
-  const healthSummary = user.healthOptInAt
-    ? summarizeHealth(
-        (
-          await orders
-            .find({
-              userId: user._id,
-              date: { $gte: addDaysLocal(today, -7), $lt: today },
-              status: { $in: ["confirmed", "preparing", "out_for_delivery", "delivered"] },
-            })
-            .toArray()
-        ).map((order) => order.drink),
-        7,
-      )
-    : null;
-
   // Add-ons are personal-card purchases — hidden for corporate seats.
   const addOnOptions =
     hasLiveSubscription && subscription.plan !== "corporate"
@@ -116,48 +105,59 @@ export default async function DashboardPage() {
         }))
       : [];
 
+  const firstName = user.name.split(" ")[0];
+  const coffeesLeft = hasLiveSubscription
+    ? Math.max(0, subscription.quota.total - subscription.quota.used)
+    : 0;
+
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 p-6">
       <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Hi, {user.name.split(" ")[0]} ☕</h1>
-          <p className="text-sm text-neutral-500">
-            {user.email} · {user.role}
-          </p>
+        <div className="flex items-center gap-3">
+          <span className="grid h-11 w-11 place-items-center rounded-full bg-espresso font-display text-lg text-white">
+            {firstName.charAt(0).toUpperCase()}
+          </span>
+          <div>
+            <h1 className="font-display text-2xl leading-tight text-espresso">
+              Hi, {firstName}
+            </h1>
+            <p className="text-xs text-muted">{user.email}</p>
+          </div>
         </div>
-        <a href="/auth/logout" className="text-sm text-neutral-500 hover:underline">
+        <a href="/auth/logout" className="text-sm font-semibold text-coffee hover:underline">
           Log out
         </a>
       </header>
 
       {hasLiveSubscription ? (
-        <section className="flex items-center justify-between rounded-md border border-neutral-200 p-4">
-          <div>
-            <h2 className="font-semibold">BrewPass {PLANS[subscription.plan].name}</h2>
-            <p className="text-sm text-neutral-500">
-              {subscription.status === "paused" ? "Paused" : "Active"}
+        <Card className="flex items-center justify-between gap-3 p-5">
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Weekday plan</SectionLabel>
+            <div className="flex items-center gap-2">
+              <StatusPill tone={subscription.status === "paused" ? "skipped" : "active"}>
+                {subscription.status === "paused" ? "Paused" : "Active"}
+              </StatusPill>
+            </div>
+            <p className="text-sm text-coffee">
               {subscription.billingMode === "card_on_file"
-                ? " · charged per coffee, no monthly fee"
-                : ` · ${Math.max(0, subscription.quota.total - subscription.quota.used)} of ${subscription.quota.total} coffees left this period`}
+                ? "Charged per coffee · no monthly fee"
+                : `${coffeesLeft} of ${subscription.quota.total} coffees left`}
             </p>
           </div>
-          <Link href="/dashboard/billing" className="text-sm text-amber-800 hover:underline">
+          <Link href="/dashboard/billing" className={buttonClasses("outline")}>
             Manage
           </Link>
-        </section>
+        </Card>
       ) : (
-        <section className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900">
+        <Card className="flex items-center justify-between gap-3 p-5">
           <div>
-            <p className="font-medium">No card on file yet.</p>
-            <p className="text-sm">Add your card and your daily coffee is sorted.</p>
+            <p className="font-semibold text-espresso">No card on file yet.</p>
+            <p className="text-sm text-coffee">Add your card and your daily coffee is sorted.</p>
           </div>
-          <Link
-            href="/dashboard/billing"
-            className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
-          >
-            Add your card
+          <Link href="/dashboard/billing" className={buttonClasses("primary")}>
+            Add card
           </Link>
-        </section>
+        </Card>
       )}
 
       {overlaps.length > 0 && <OverlapNotice overlaps={overlaps} />}
@@ -176,144 +176,51 @@ export default async function DashboardPage() {
       )}
 
       {hasLiveSubscription && (
-        <section className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-4">
+        <Card className="flex items-center justify-between gap-3 p-5">
           <div>
-            <h2 className="font-semibold text-amber-900">Plan your month</h2>
-            <p className="text-sm text-amber-800">
+            <h2 className="font-semibold text-espresso">Plan your month</h2>
+            <p className="text-sm text-coffee">
               Pick a coffee and vendor for every day at once, then confirm and forget.
             </p>
           </div>
-          <Link
-            href="/dashboard/monthly"
-            className="shrink-0 rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
-          >
-            Plan month →
+          <Link href="/dashboard/monthly" className={buttonClasses("primary", "shrink-0")}>
+            Plan →
           </Link>
-        </section>
+        </Card>
       )}
 
       {officeCoffees.length > 0 && <OfficeCoffeeTracker items={officeCoffees} />}
 
-      <section className="flex items-center justify-between rounded-md border border-neutral-200 p-4">
-        <div>
-          <h2 className="font-semibold">Office coffee</h2>
-          <p className="text-sm text-neutral-500">
-            Join your company with a code, or run coffee for your team — separate from your personal
-            plan.
-          </p>
-        </div>
-        <Link
-          href="/dashboard/corporate"
-          className="shrink-0 text-sm text-amber-800 hover:underline"
-        >
-          Manage →
-        </Link>
-      </section>
-
-      <HealthCard optedIn={Boolean(user.healthOptInAt)} summary={healthSummary} />
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <section className="rounded-md border border-neutral-200 p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Your usual</h2>
-            <Link href="/onboarding/preferences" className="text-sm text-amber-800 hover:underline">
-              Edit
-            </Link>
-          </div>
-          {preference ? (
-            <div className="mt-2 text-sm text-neutral-600">
-              <p className="text-lg font-medium text-neutral-900">
-                {preference.defaultDrink.drink}
-              </p>
-              <p>
-                {preference.defaultDrink.size} · {preference.defaultDrink.milk} ·{" "}
-                {preference.defaultDrink.sugar === 0
-                  ? "no sugar"
-                  : `sugar ${preference.defaultDrink.sugar}`}{" "}
-                · {preference.defaultDrink.strength}
-              </p>
-              <p className="mt-2">
-                {preference.schedule.days.map((day) => WEEKDAY_LABELS[day]).join(", ")} at{" "}
-                {preference.schedule.time}
-              </p>
-              {defaultLocation && <p>Delivered to {defaultLocation.label}</p>}
-              <Link
-                href="/dashboard/vendor"
-                className="mt-2 inline-block text-amber-800 hover:underline"
-              >
-                Choose your vendor →
-              </Link>
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-neutral-500">Not set yet.</p>
-          )}
-        </section>
-
-        <section className="rounded-md border border-neutral-200 p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Locations</h2>
-            <Link href="/onboarding/locations" className="text-sm text-amber-800 hover:underline">
-              Manage
-            </Link>
-          </div>
-          <ul className="mt-2 flex flex-col gap-2 text-sm text-neutral-600">
-            {locationDocs.map((location) => (
-              <li key={location._id.toHexString()}>
-                <span className="font-medium text-neutral-900">{location.label}</span> —{" "}
-                {location.address}
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
-
       {recentOrders.length > 0 && (
-        <section className="rounded-md border border-neutral-200 p-4">
-          <h2 className="font-semibold">Recent orders</h2>
-          <ul className="mt-2 flex flex-col gap-1 text-sm text-neutral-600">
+        <section className="flex flex-col gap-3">
+          <SectionLabel>Recent coffee deliveries</SectionLabel>
+          <ul className="flex flex-col gap-3">
             {recentOrders.map((order) => (
-              <li key={order._id.toHexString()} className="flex items-center justify-between gap-3">
-                <span>
-                  {order.date} — {order.drink.drink} to {order.location.label}
-                </span>
-                <span className="flex items-center gap-3">
+              <Card
+                as="li"
+                key={order._id.toHexString()}
+                className="flex items-center justify-between gap-3 p-4"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-semibold text-espresso">{order.drink.drink}</span>
+                  <span className="text-xs text-muted">{formatDeliveryDate(order.date)}</span>
+                </div>
+                <div className="flex items-center gap-3">
                   {order.status === "delivered" && (
                     <RateOrder
                       orderId={order._id.toHexString()}
                       initialScore={ratingByOrderId.get(order._id.toHexString())}
                     />
                   )}
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      order.status === "delivered"
-                        ? "bg-green-100 text-green-800"
-                        : order.status === "failed"
-                          ? "bg-red-100 text-red-700"
-                          : order.status === "skipped"
-                            ? "bg-neutral-100 text-neutral-500"
-                            : "bg-amber-100 text-amber-900"
-                    }`}
-                  >
+                  <StatusPill tone={ORDER_STATUS_TONES[order.status] ?? "scheduled"}>
                     {ORDER_STATUS_LABELS[order.status] ?? order.status}
-                  </span>
-                </span>
-              </li>
+                  </StatusPill>
+                </div>
+              </Card>
             ))}
           </ul>
         </section>
       )}
-
-      <section className="rounded-md border border-neutral-200 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Profile</h2>
-          <Link href="/onboarding" className="text-sm text-amber-800 hover:underline">
-            Edit
-          </Link>
-        </div>
-        <p className="mt-2 text-sm text-neutral-600">
-          {user.name} · {user.phone ?? "no phone"} · {user.role}
-        </p>
-      </section>
     </main>
   );
 }

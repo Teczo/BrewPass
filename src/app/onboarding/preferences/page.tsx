@@ -32,6 +32,14 @@ export default async function OnboardingPreferencesPage() {
   return (
     <section className="flex flex-col gap-6">
       <StepIndicator current={3} />
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-[26px] leading-tight text-espresso">
+          Build your usual
+        </h1>
+        <p className="text-sm text-coffee">
+          Pick from our menu — any café can make it.
+        </p>
+      </header>
       <PreferencesForm
         locations={locationDocs.map(locationToJson)}
         initial={preference ? preferenceToJson(preference) : null}

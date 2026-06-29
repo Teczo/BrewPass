@@ -3,6 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Card, SectionLabel } from "@/components/ui/card";
+import { StatusPill } from "@/components/ui/status-pill";
+import { cn } from "@/lib/cn";
 import { formatMyr } from "@/lib/format";
 import type { VendorCard } from "@/lib/vendor-selection";
 
@@ -21,23 +25,52 @@ interface Pending {
   rationale?: string;
 }
 
-function VendorLine({ card, drinkName }: { card: VendorCard; drinkName: string }) {
+// Compact figures row: rating · distance · price.
+function VendorMeta({ card }: { card: VendorCard }) {
   return (
-    <span className="flex flex-col">
-      <span className="font-medium">
-        {card.name}
-        {!card.coversDrink && (
-          <span className="ml-2 rounded bg-amber-100 px-1.5 text-xs text-amber-800">
-            doesn&apos;t make {drinkName}
-          </span>
-        )}
-      </span>
-      <span className="text-xs text-neutral-500">
-        {card.distanceKm} km
-        {card.ratingScore !== null && ` · ${card.ratingScore}★`}
-        {card.priceSen !== null && ` · ${formatMyr(card.priceSen)}`}
-      </span>
+    <span className="font-mono text-xs text-muted">
+      {card.ratingScore !== null && `★ ${card.ratingScore}`}
+      {card.ratingScore !== null && " · "}
+      {card.distanceKm} km
+      {card.priceSen !== null && ` · ${formatMyr(card.priceSen)}`}
     </span>
+  );
+}
+
+function VendorRow({
+  card,
+  drinkName,
+  onSelect,
+  busy,
+  highlighted,
+}: {
+  card: VendorCard;
+  drinkName: string;
+  onSelect: () => void;
+  busy: boolean;
+  highlighted?: boolean;
+}) {
+  return (
+    <Card
+      className={cn(
+        "flex items-center justify-between gap-3 p-4",
+        highlighted && "border-[1.5px] border-sage",
+      )}
+    >
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold text-espresso">{card.name}</span>
+          {highlighted && <StatusPill tone="active">Preferred</StatusPill>}
+          {!card.coversDrink && (
+            <StatusPill tone="skipped">doesn&apos;t make {drinkName}</StatusPill>
+          )}
+        </div>
+        <VendorMeta card={card} />
+      </div>
+      <Button variant="secondary" disabled={busy} onClick={onSelect}>
+        Select
+      </Button>
+    </Card>
   );
 }
 
@@ -140,107 +173,108 @@ export function VendorSelector({
 
   return (
     <div className="flex flex-col gap-5">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-terracotta">{error}</p>}
 
       {/* Current confirmed selection */}
-      <section className="rounded-md border border-neutral-200 p-4">
+      <Card className="p-4">
         {preferredVendorId ? (
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm">
-              Your preferred vendor:{" "}
-              <span className="font-medium">{preferredVendorName ?? "selected vendor"}</span>{" "}
-              <span className="text-neutral-400">({method === "ai" ? "AI pick" : "manual"})</span>
-            </p>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={clearSelection}
-              className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
-            >
-              Use platform auto-route
-            </button>
+            <div className="flex flex-col gap-1">
+              <StatusPill tone="active">Preferred</StatusPill>
+              <p className="text-sm text-coffee">
+                <span className="font-semibold text-espresso">
+                  {preferredVendorName ?? "selected vendor"}
+                </span>{" "}
+                <span className="text-muted">({method === "ai" ? "AI pick" : "manual"})</span>
+              </p>
+            </div>
+            <Button variant="secondary" disabled={busy} onClick={clearSelection} className="shrink-0">
+              Auto-route
+            </Button>
           </div>
         ) : (
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-coffee">
             The platform auto-routes each order to the best available vendor. Pick a preferred
             vendor below to change that.
           </p>
         )}
-      </section>
+      </Card>
 
-      {/* Pending review — confirm step (rule #5) */}
+      {/* Pending review — confirm step (rule #7) */}
       {pending && pendingCard && (
-        <section className="flex flex-col gap-3 rounded-md border border-amber-300 bg-amber-50 p-4">
-          <p className="text-sm font-medium text-amber-900">Review your selection</p>
-          <VendorLine card={pendingCard} drinkName={drinkName} />
-          {pending.rationale && <p className="text-sm text-amber-900">💡 {pending.rationale}</p>}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={confirm}
-              className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-            >
-              {busy ? "Confirming…" : "Confirm vendor"}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setPending(null)}
-              className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50"
-            >
-              Cancel
-            </button>
+        <Card className="flex flex-col gap-3 border-[1.5px] border-sage p-4">
+          <SectionLabel>Review your selection</SectionLabel>
+          <div className="flex flex-col gap-1">
+            <span className="font-semibold text-espresso">{pendingCard.name}</span>
+            <VendorMeta card={pendingCard} />
           </div>
-        </section>
+          {pending.rationale && (
+            <p className="rounded-[14px] bg-sage-soft px-4 py-3 text-sm text-sage-ink">
+              💡 {pending.rationale}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <Button disabled={busy} onClick={confirm}>
+              {busy ? "Confirming…" : `Confirm ${pendingCard.name}`}
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => setPending(null)}>
+              Cancel
+            </Button>
+          </div>
+        </Card>
       )}
 
       {/* Mode switch */}
-      <div className="flex gap-2">
-        {(["manual", "ai"] as const).map((value) => (
+      <div className="flex gap-2 rounded-full bg-surface p-1 shadow-card">
+        {(
+          [
+            { value: "ai", label: "Let AI pick" },
+            { value: "manual", label: "Browse cafés" },
+          ] as const
+        ).map((option) => (
           <button
-            key={value}
+            key={option.value}
             type="button"
-            onClick={() => setMode(value)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-              mode === value
-                ? "bg-neutral-900 text-white"
-                : "border border-neutral-300 hover:bg-neutral-50"
-            }`}
+            onClick={() => setMode(option.value)}
+            className={cn(
+              "flex-1 rounded-full px-4 py-2 text-sm font-semibold transition-colors",
+              mode === option.value ? "bg-espresso text-white" : "text-coffee",
+            )}
           >
-            {value === "manual" ? "Browse vendors" : "Ask the assistant"}
+            {option.label}
           </button>
         ))}
       </div>
 
       {vendors.length === 0 ? (
-        <p className="rounded-md border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
+        <Card className="border border-dashed border-border p-4 text-sm text-muted">
           No vendors serve your area yet.
-        </p>
+        </Card>
       ) : mode === "manual" ? (
-        <ul className="flex flex-col divide-y divide-neutral-100 rounded-md border border-neutral-200">
+        <ul className="flex flex-col gap-3">
           {vendors.map((card) => (
-            <li key={card.id} className="flex items-center justify-between gap-3 p-3">
-              <VendorLine card={card} drinkName={drinkName} />
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setPending({ vendorId: card.id, method: "manual" })}
-                className="shrink-0 rounded border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
-              >
-                Select
-              </button>
+            <li key={card.id}>
+              <VendorRow
+                card={card}
+                drinkName={drinkName}
+                busy={busy}
+                highlighted={card.id === preferredVendorId}
+                onSelect={() => setPending({ vendorId: card.id, method: "manual" })}
+              />
             </li>
           ))}
         </ul>
       ) : (
-        <section className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4">
-          <p className="text-sm text-neutral-500">How much does each of these matter to you?</p>
+        <Card className="flex flex-col gap-3 p-5">
+          <SectionLabel>What matters to you?</SectionLabel>
           {PRIORITIES.map((priority) => (
-            <label key={priority.key} className="flex items-center justify-between gap-3 text-sm">
+            <label
+              key={priority.key}
+              className="flex items-center justify-between gap-3 text-sm text-coffee"
+            >
               <span>{priority.label}</span>
               <select
-                className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                className="rounded-xl border border-border bg-field px-3 py-2 text-sm font-medium text-ink focus:border-coffee focus:outline-none"
                 value={priorities[priority.key]}
                 onChange={(e) =>
                   setPriorities((prev) => ({ ...prev, [priority.key]: Number(e.target.value) }))
@@ -254,15 +288,10 @@ export function VendorSelector({
               </select>
             </label>
           ))}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={getRecommendation}
-            className="self-start rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-          >
+          <Button disabled={busy} onClick={getRecommendation} className="self-start">
             {busy ? "Thinking…" : "Recommend a vendor"}
-          </button>
-        </section>
+          </Button>
+        </Card>
       )}
     </div>
   );

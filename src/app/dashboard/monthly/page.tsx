@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { MonthlyListPlanner } from "@/components/monthly-list-planner";
+import { buttonClasses } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { getCurrentSubscription } from "@/lib/billing";
 import {
   locationsCollection,
@@ -61,35 +63,27 @@ export default async function MonthlyListPage() {
   const hasLiveSubscription = subscription !== null && subscription.status !== "canceled";
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 p-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Your month of coffee ☕</h1>
-          <p className="text-sm text-neutral-500">Choose once. We handle every morning.</p>
-        </div>
-        <Link href="/dashboard" className="text-sm text-amber-800 hover:underline">
-          ← Dashboard
-        </Link>
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 p-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-[26px] leading-tight text-espresso">Plan your month</h1>
+        <p className="text-sm text-coffee">Choose once. We handle every morning.</p>
       </header>
 
       {!hasLiveSubscription ? (
-        <section className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900">
-          <p className="text-sm">Add your card to build your monthly list.</p>
-          <Link
-            href="/dashboard/billing"
-            className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
-          >
-            Add your card
+        <Card className="flex items-center justify-between gap-3 p-5">
+          <p className="text-sm text-coffee">Add your card to build your monthly list.</p>
+          <Link href="/dashboard/billing" className={buttonClasses("primary", "shrink-0")}>
+            Add card
           </Link>
-        </section>
+        </Card>
       ) : !preference || !location ? (
-        <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <Card className="p-5 text-sm text-coffee">
           Set your usual drink and a default delivery location first, then come back to plan your
           month.{" "}
-          <Link href="/onboarding/preferences" className="font-medium underline">
+          <Link href="/onboarding/preferences" className="font-semibold text-coffee underline">
             Set preferences
           </Link>
-        </section>
+        </Card>
       ) : (
         <MonthlyListPlanner
           period={period}

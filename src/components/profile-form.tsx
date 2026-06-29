@@ -3,6 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { Field } from "@/components/ui/field";
+
 const ROLES = [
   { value: "individual", label: "Individual" },
   { value: "corporate", label: "Corporate" },
@@ -46,61 +50,46 @@ export function ProfileForm({ initial, nextHref }: ProfileFormProps) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1 text-sm font-medium">
-        Full name
-        <input
-          className="rounded-md border border-neutral-300 px-3 py-2"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          maxLength={120}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm font-medium">
-        Phone
-        <input
-          className="rounded-md border border-neutral-300 px-3 py-2"
-          type="tel"
-          placeholder="+60123456789"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          required
-        />
-      </label>
-      <fieldset className="flex flex-col gap-2 text-sm font-medium">
-        <legend className="mb-1">I&apos;m signing up as</legend>
-        <div className="flex gap-2">
+    <form onSubmit={onSubmit} className="flex flex-col gap-5">
+      <Field
+        id="name"
+        label="Full name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        required
+        maxLength={120}
+      />
+      <Field
+        id="phone"
+        label="Phone"
+        type="tel"
+        placeholder="+60 12-345 6789"
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+        required
+        hint="We'll only message you about your coffee — never marketing."
+      />
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 text-xs font-medium text-coffee">
+          I&apos;m signing up as
+        </legend>
+        <div className="flex flex-wrap gap-2">
           {ROLES.map((option) => (
-            <label
+            <Chip
               key={option.value}
-              className={`cursor-pointer rounded-md border px-3 py-2 ${
-                role === option.value
-                  ? "border-amber-800 bg-amber-50 text-amber-900"
-                  : "border-neutral-300"
-              }`}
+              selected={role === option.value}
+              onClick={() => setRole(option.value)}
+              aria-pressed={role === option.value}
             >
-              <input
-                type="radio"
-                name="role"
-                className="sr-only"
-                value={option.value}
-                checked={role === option.value}
-                onChange={() => setRole(option.value)}
-              />
               {option.label}
-            </label>
+            </Chip>
           ))}
         </div>
       </fieldset>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded-md bg-amber-800 px-4 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-      >
-        {saving ? "Saving…" : "Save and continue"}
-      </button>
+      {error && <p className="text-sm text-terracotta">{error}</p>}
+      <Button type="submit" disabled={saving} fullWidth>
+        {saving ? "Saving…" : "Continue"}
+      </Button>
     </form>
   );
 }

@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { Button, buttonClasses } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Chip } from "@/components/ui/chip";
+import { Input } from "@/components/ui/field";
+import { StatusPill } from "@/components/ui/status-pill";
+import { cn } from "@/lib/cn";
 import type { LocationJson } from "@/lib/serializers";
 
 const LABEL_PRESETS = ["Home", "Office"] as const;
@@ -99,60 +105,58 @@ export function LocationsManager({ initial, nextHref }: LocationsManagerProps) {
 
   return (
     <div className="flex flex-col gap-6">
+      <button
+        type="button"
+        onClick={useCurrentLocation}
+        disabled={locating}
+        className={buttonClasses("secondary", "w-full disabled:opacity-50")}
+      >
+        {locating ? "Locating…" : "📍 Use my current location"}
+      </button>
+
       {locations.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {locations.map((location) => (
-            <li
+        <ul className="flex flex-col gap-3">
+          {locations.map((location, index) => (
+            <Card
+              as="li"
               key={location.id}
-              className="flex items-start justify-between gap-3 rounded-md border border-neutral-200 p-3"
+              className="flex items-start justify-between gap-3 p-4"
             >
-              <div>
-                <p className="font-medium">{location.label}</p>
-                <p className="text-sm text-neutral-500">{location.address}</p>
-                {location.notes && <p className="text-sm text-neutral-400">{location.notes}</p>}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-espresso">{location.label}</p>
+                  {index === 0 && <StatusPill tone="active">Default</StatusPill>}
+                </div>
+                <p className="text-sm text-coffee">{location.address}</p>
+                {location.notes && <p className="text-sm text-muted">{location.notes}</p>}
               </div>
               <button
                 type="button"
                 onClick={() => removeLocation(location.id)}
-                className="text-sm text-red-600 hover:underline"
+                className="text-sm font-semibold text-terracotta hover:underline"
               >
                 Remove
               </button>
-            </li>
+            </Card>
           ))}
         </ul>
       )}
 
-      <form
-        onSubmit={addLocation}
-        className="flex flex-col gap-4 rounded-md border border-neutral-200 p-4"
-      >
-        <p className="font-medium">Add a delivery location</p>
-        <div className="flex gap-2">
+      <Card as="form" onSubmit={addLocation} className="flex flex-col gap-4 p-5">
+        <p className="font-semibold text-espresso">Add another address</p>
+        <div className="flex flex-wrap gap-2">
           {[...LABEL_PRESETS, "Other"].map((preset) => (
-            <label
+            <Chip
               key={preset}
-              className={`cursor-pointer rounded-md border px-3 py-2 text-sm ${
-                label === preset
-                  ? "border-amber-800 bg-amber-50 text-amber-900"
-                  : "border-neutral-300"
-              }`}
+              selected={label === preset}
+              onClick={() => setLabel(preset)}
             >
-              <input
-                type="radio"
-                name="label"
-                className="sr-only"
-                value={preset}
-                checked={label === preset}
-                onChange={() => setLabel(preset)}
-              />
               {preset}
-            </label>
+            </Chip>
           ))}
         </div>
         {label === "Other" && (
-          <input
-            className="rounded-md border border-neutral-300 px-3 py-2"
+          <Input
             placeholder="Label (e.g. Gym)"
             value={customLabel}
             onChange={(e) => setCustomLabel(e.target.value)}
@@ -161,46 +165,36 @@ export function LocationsManager({ initial, nextHref }: LocationsManagerProps) {
           />
         )}
         <textarea
-          className="rounded-md border border-neutral-300 px-3 py-2"
+          className="w-full rounded-xl border border-border bg-field px-3.5 py-3 text-[15px] font-medium text-ink placeholder:text-muted focus:border-coffee focus:outline-none"
           placeholder="Full address — we'll pin it on the map"
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           required
           rows={2}
         />
-        <button
-          type="button"
-          onClick={useCurrentLocation}
-          disabled={locating}
-          className="self-start text-sm text-amber-800 hover:underline disabled:opacity-50"
-        >
-          {locating ? "Locating…" : "📍 Use my current location"}
-        </button>
-        <input
-          className="rounded-md border border-neutral-300 px-3 py-2"
+        <Input
           placeholder="Delivery notes (optional, e.g. 'Level 12, ask for Aiman')"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           maxLength={500}
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
+        {error && <p className="text-sm text-terracotta">{error}</p>}
+        <Button
           type="submit"
+          variant="secondary"
           disabled={saving || (label === "Other" && !customLabel.trim())}
-          className="rounded-md border border-amber-800 px-4 py-2 font-medium text-amber-900 hover:bg-amber-50 disabled:opacity-50"
         >
           {saving ? "Adding…" : "Add location"}
-        </button>
-      </form>
+        </Button>
+      </Card>
 
       <Link
         href={nextHref}
         aria-disabled={locations.length === 0}
-        className={`rounded-md px-4 py-2 text-center font-medium text-white ${
-          locations.length === 0
-            ? "pointer-events-none bg-neutral-300"
-            : "bg-amber-800 hover:bg-amber-700"
-        }`}
+        className={cn(
+          buttonClasses("primary", "w-full"),
+          locations.length === 0 && "pointer-events-none opacity-50",
+        )}
       >
         Continue
       </Link>
