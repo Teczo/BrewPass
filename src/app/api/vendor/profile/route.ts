@@ -4,6 +4,10 @@ import { z } from "zod";
 import { vendorsCollection } from "@/lib/collections";
 import { geocodeAddress } from "@/lib/geocode";
 import { localTimeSchema, operatingHoursSchema, slotCapacitySchema } from "@/lib/models";
+import {
+  reassignChargedOrdersForOfflineVendor,
+  vendorWentOffline,
+} from "@/lib/order-engine/reassign";
 import { vendorToJson } from "@/lib/serializers";
 import { canVendorSetStatus } from "@/lib/vendor-rules";
 import { getCurrentVendorContext } from "@/lib/vendors";
@@ -89,6 +93,18 @@ export async function PATCH(request: Request) {
     { returnDocument: "after" },
   );
   if (!updated) return NextResponse.json({ error: "Vendor not found" }, { status: 404 });
+
+  // Phase O.2 §2.5: if the vendor just went offline, rescue its already-charged,
+  // not-yet-delivered orders (reassign at the snapshot price, else auto-refund).
+  // Best-effort — never blocks the status change.
+  if (input.status && vendorWentOffline(context.vendor.status, input.status)) {
+    try {
+      const result = await reassignChargedOrdersForOfflineVendor(context.vendor._id);
+      console.log("vendor-offline reassignment:", JSON.stringify(result));
+    } catch (error) {
+      console.error("§2.5 reassignment on vendor pause/offline failed:", error);
+    }
+  }
 
   return NextResponse.json({ vendor: vendorToJson(updated) });
 }

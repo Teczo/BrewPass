@@ -4,6 +4,10 @@ import { z } from "zod";
 
 import { getCurrentAdmin } from "@/lib/admin";
 import { usersCollection, vendorsCollection } from "@/lib/collections";
+import {
+  reassignChargedOrdersForOfflineVendor,
+  vendorWentOffline,
+} from "@/lib/order-engine/reassign";
 import { canAdminSetStatus } from "@/lib/vendor-rules";
 
 export const runtime = "nodejs";
@@ -109,6 +113,18 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (input.capacityPerHour !== undefined) fieldUpdates.capacityPerHour = input.capacityPerHour;
   if (Object.keys(fieldUpdates).length > 0) {
     await vendors.updateOne({ _id: vendorId }, { $set: { ...fieldUpdates, updatedAt: now } });
+  }
+
+  // Phase O.2 §2.5: an admin suspend/pause/offline of a serving vendor rescues
+  // its already-charged, not-yet-delivered orders (reassign at snapshot price,
+  // else auto-refund). Best-effort — never blocks the status change.
+  if (input.status && vendorWentOffline(vendor.status, input.status)) {
+    try {
+      const result = await reassignChargedOrdersForOfflineVendor(vendorId, now);
+      console.log("vendor-offline reassignment:", JSON.stringify(result));
+    } catch (error) {
+      console.error("§2.5 reassignment on admin status change failed:", error);
+    }
   }
 
   return NextResponse.json({ ok: true });

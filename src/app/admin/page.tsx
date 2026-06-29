@@ -5,7 +5,9 @@ import {
   AdminUsers,
   AdminVendors,
   CommissionPanel,
+  StuckDeliveries,
   type AdminOrderRow,
+  type AdminStuckRow,
   type AdminUserRow,
   type AdminVendorRow,
 } from "@/components/admin-panels";
@@ -14,9 +16,13 @@ import {
   AdminSeedTaxonomyButton,
   AdminSetupButton,
 } from "@/components/admin-setup-button";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { getCurrentAdmin } from "@/lib/admin";
 import { getSession } from "@/lib/auth0";
+import { deliveryProvider } from "@/lib/models";
+import { findStuckDeliveries } from "@/lib/delivery/stuck";
 import {
+  optionTaxonomyCollection,
   ordersCollection,
   subscriptionsCollection,
   usersCollection,
@@ -47,22 +53,31 @@ export default async function AdminPage() {
   }
 
   const today = localDateOf(new Date());
-  const [orders, vendors, users, subscriptions] = await Promise.all([
+  const [orders, vendors, users, subscriptions, taxonomy] = await Promise.all([
     ordersCollection(),
     vendorsCollection(),
     usersCollection(),
     subscriptionsCollection(),
+    optionTaxonomyCollection(),
   ]);
 
-  const [todayOrders, vendorDocs, userDocs, activeSubs, totalUsers, commissionDefaultBps] =
-    await Promise.all([
-      orders.find({ date: today }).sort({ deliverAt: 1 }).limit(200).toArray(),
-      vendors.find({}).sort({ businessName: 1 }).toArray(),
-      users.find({}).sort({ createdAt: -1 }).limit(100).toArray(),
-      subscriptions.countDocuments({ status: { $in: ["active", "trialing"] } }),
-      users.estimatedDocumentCount(),
-      getPlatformCommissionBps(),
-    ]);
+  const [
+    todayOrders,
+    vendorDocs,
+    userDocs,
+    activeSubs,
+    totalUsers,
+    commissionDefaultBps,
+    taxonomyCount,
+  ] = await Promise.all([
+    orders.find({ date: today }).sort({ deliverAt: 1 }).limit(200).toArray(),
+    vendors.find({}).sort({ businessName: 1 }).toArray(),
+    users.find({}).sort({ createdAt: -1 }).limit(100).toArray(),
+    subscriptions.countDocuments({ status: { $in: ["active", "trialing"] } }),
+    users.estimatedDocumentCount(),
+    getPlatformCommissionBps(),
+    taxonomy.estimatedDocumentCount(),
+  ]);
 
   const nameById = new Map(userDocs.map((user) => [user._id.toHexString(), user.name]));
   const vendorNameById = new Map(
@@ -81,6 +96,48 @@ export default async function AdminPage() {
     for (const user of extra) nameById.set(user._id.toHexString(), user.name);
   }
 
+  // Phase O.4 (§5.6): deliveries wedged in flight (a courier webhook never
+  // arrived). Detected at read time and surfaced with Resolve actions.
+  const stuckNow = new Date();
+  const stuckDeliveries = await findStuckDeliveries(stuckNow);
+  const stuckOrderIds = stuckDeliveries.map((delivery) => delivery.orderId);
+  const stuckOrders =
+    stuckOrderIds.length > 0
+      ? await orders.find({ _id: { $in: stuckOrderIds } }).toArray()
+      : [];
+  const stuckOrderById = new Map(stuckOrders.map((order) => [order._id.toHexString(), order]));
+  // Names for stuck-order customers not in the latest-100 slice.
+  const stuckMissingUserIds = stuckOrders
+    .map((order) => order.userId)
+    .filter((id) => !nameById.has(id.toHexString()));
+  if (stuckMissingUserIds.length > 0) {
+    const extra = await users
+      .find({ _id: { $in: stuckMissingUserIds } })
+      .project<{ _id: (typeof stuckMissingUserIds)[number]; name: string }>({ name: 1 })
+      .toArray();
+    for (const user of extra) nameById.set(user._id.toHexString(), user.name);
+  }
+  const nowMs = stuckNow.getTime();
+  const stuckRows: AdminStuckRow[] = stuckDeliveries.flatMap((delivery) => {
+    const order = stuckOrderById.get(delivery.orderId.toHexString());
+    if (!order) return [];
+    const anchor =
+      delivery.pickedUpAt ?? delivery.dispatchedAt ?? delivery.assignedAt ?? delivery.createdAt;
+    return [
+      {
+        orderId: order._id.toHexString(),
+        customerName: nameById.get(order.userId.toHexString()) ?? "Customer",
+        drink: order.drink.drink,
+        vendorName: order.vendorId
+          ? (vendorNameById.get(order.vendorId.toHexString()) ?? "?")
+          : "—",
+        provider: deliveryProvider(delivery),
+        deliveryStatus: delivery.status,
+        stuckMinutes: Math.round((nowMs - anchor.getTime()) / 60_000),
+      },
+    ];
+  });
+
   const statusCounts = new Map<string, number>();
   for (const order of todayOrders) {
     statusCounts.set(order.status, (statusCounts.get(order.status) ?? 0) + 1);
@@ -89,6 +146,8 @@ export default async function AdminPage() {
 
   const todayCountByVendor = new Map<string, number>();
   for (const order of todayOrders) {
+    // Unrouted (vendorless, Phase O.2) orders count toward no vendor.
+    if (!order.vendorId) continue;
     const key = order.vendorId.toHexString();
     todayCountByVendor.set(key, (todayCountByVendor.get(key) ?? 0) + 1);
   }
@@ -98,7 +157,9 @@ export default async function AdminPage() {
     customerName: nameById.get(order.userId.toHexString()) ?? "Customer",
     drink: order.drink.drink,
     locationLabel: order.location.label,
-    vendorName: vendorNameById.get(order.vendorId.toHexString()) ?? "?",
+    vendorName: order.vendorId
+      ? (vendorNameById.get(order.vendorId.toHexString()) ?? "?")
+      : "— unrouted",
     status: order.status,
     deliverAt: order.deliverAt.toISOString(),
     failureReason: order.failureReason ?? null,
@@ -186,6 +247,23 @@ export default async function AdminPage() {
         ))}
       </section>
 
+      {taxonomyCount === 0 && (
+        <section className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-4">
+          <div>
+            <h2 className="font-semibold text-amber-900">Platform setup: seed the menu taxonomy</h2>
+            <p className="text-sm text-amber-800">
+              No menu taxonomy yet. Seed it so subscriber preferences and vendor menus have a
+              canonical option set to map onto.
+            </p>
+          </div>
+          <AdminSeedTaxonomyButton />
+        </section>
+      )}
+
+      <ErrorBoundary label="stuck deliveries">
+        <StuckDeliveries rows={stuckRows} />
+      </ErrorBoundary>
+
       {failures.length > 0 && (
         <section className="rounded-md border border-red-200 bg-red-50 p-4">
           <h2 className="font-semibold text-red-800">Failures today</h2>
@@ -194,6 +272,12 @@ export default async function AdminPage() {
               <li key={order._id.toHexString()}>
                 {nameById.get(order.userId.toHexString()) ?? "Customer"} — {order.drink.drink}:{" "}
                 {order.failureReason ?? "unknown"}
+                {/* Phase O.2 (§2.2): 3+ consecutive no-vendor days = likely coverage gap. */}
+                {order.coverageGapEscalated && (
+                  <span className="ml-1 rounded bg-red-200 px-1.5 py-0.5 text-xs font-semibold text-red-900">
+                    coverage gap — 3+ days unrouted
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -202,60 +286,74 @@ export default async function AdminPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Routing health</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-md border border-neutral-200 p-4">
-            <p className="text-2xl font-bold">{Math.round(reassignmentRate * 100)}%</p>
-            <p className="text-xs text-neutral-500">
-              reassignment rate ({reassignedCount}/{todayOrders.length})
-            </p>
+        {todayOrders.length === 0 ? (
+          <p className="rounded-md border border-neutral-200 p-4 text-sm text-neutral-500">
+            No orders yet today.
+          </p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-md border border-neutral-200 p-4">
+              <p className="text-2xl font-bold">{Math.round(reassignmentRate * 100)}%</p>
+              <p className="text-xs text-neutral-500">
+                reassignment rate ({reassignedCount}/{todayOrders.length})
+              </p>
+            </div>
+            <div className="rounded-md border border-neutral-200 p-4">
+              <p className="text-2xl font-bold">{failures.length}</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                {failureReasonCounts.size === 0
+                  ? "no failures"
+                  : [...failureReasonCounts.entries()]
+                      .map(([reason, count]) => `${reason}: ${count}`)
+                      .join(" · ")}
+              </p>
+            </div>
+            <div className="rounded-md border border-neutral-200 p-4">
+              <p className="text-2xl font-bold">{suspendedVendors.length}</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                quality-suspended{" "}
+                {suspendedVendors.length > 0 &&
+                  `· ${suspendedVendors.map((vendor) => vendor.businessName).join(", ")}`}
+              </p>
+            </div>
           </div>
-          <div className="rounded-md border border-neutral-200 p-4">
-            <p className="text-2xl font-bold">{failures.length}</p>
-            <p className="mt-1 text-xs text-neutral-500">
-              {failureReasonCounts.size === 0
-                ? "no failures"
-                : [...failureReasonCounts.entries()]
-                    .map(([reason, count]) => `${reason}: ${count}`)
-                    .join(" · ")}
-            </p>
-          </div>
-          <div className="rounded-md border border-neutral-200 p-4">
-            <p className="text-2xl font-bold">{suspendedVendors.length}</p>
-            <p className="mt-1 text-xs text-neutral-500">
-              quality-suspended{" "}
-              {suspendedVendors.length > 0 &&
-                `· ${suspendedVendors.map((vendor) => vendor.businessName).join(", ")}`}
-            </p>
-          </div>
-        </div>
+        )}
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Commission</h2>
-        <CommissionPanel
-          defaultRateBps={commissionDefaultBps}
-          codeDefaultBps={PLATFORM_DEFAULT_COMMISSION_BPS}
-        />
+        <ErrorBoundary label="the commission panel">
+          <CommissionPanel
+            defaultRateBps={commissionDefaultBps}
+            codeDefaultBps={PLATFORM_DEFAULT_COMMISSION_BPS}
+          />
+        </ErrorBoundary>
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Today&apos;s orders</h2>
-        <AdminOrdersTable
-          orders={orderRows}
-          vendors={vendorRows
-            .filter((vendor) => vendor.status === "active")
-            .map(({ id, name }) => ({ id, name }))}
-        />
+        <ErrorBoundary label="the orders table">
+          <AdminOrdersTable
+            orders={orderRows}
+            vendors={vendorRows
+              .filter((vendor) => vendor.status === "active")
+              .map(({ id, name }) => ({ id, name }))}
+          />
+        </ErrorBoundary>
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Vendors</h2>
-        <AdminVendors vendors={vendorRows} platformDefaultBps={commissionDefaultBps} />
+        <ErrorBoundary label="the vendors table">
+          <AdminVendors vendors={vendorRows} platformDefaultBps={commissionDefaultBps} />
+        </ErrorBoundary>
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Users (latest 100)</h2>
-        <AdminUsers users={userRows} />
+        <ErrorBoundary label="the users table">
+          <AdminUsers users={userRows} />
+        </ErrorBoundary>
       </section>
     </main>
   );

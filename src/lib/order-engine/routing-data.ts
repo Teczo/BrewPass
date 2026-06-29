@@ -43,7 +43,14 @@ export async function loadRoutingCandidates(localDate: string): Promise<RoutingC
         _id: { vendorId: ObjectId; hour: number };
         count: number;
       }>([
-        { $match: { date: localDate, status: { $in: [...CAPACITY_STATUSES] } } },
+        // Vendorless (unrouted, Phase O.2) orders occupy no vendor's capacity.
+        {
+          $match: {
+            date: localDate,
+            status: { $in: [...CAPACITY_STATUSES] },
+            vendorId: { $exists: true },
+          },
+        },
         {
           $group: {
             _id: {

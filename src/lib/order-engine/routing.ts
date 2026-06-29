@@ -48,6 +48,13 @@ export interface RoutingRequest {
   nowLocalTime: string;
   /** Vendors to exclude (e.g. ones that already declined this order). */
   excludeVendorIds?: ObjectId[];
+  /**
+   * Phase O.2 §2.5 — emergency same-day reassignment of an already-charged
+   * order whose vendor went offline. Bypasses the per-vendor accept-cutoff gate
+   * (the rescue happens after that cutoff by definition); every other
+   * eligibility check still applies.
+   */
+  bypassAcceptCutoff?: boolean;
 }
 
 /** The KL delivery hour (0–23) of an HH:mm time. */
@@ -113,6 +120,9 @@ export function isNotQualitySuspended(vendor: Vendor): boolean {
  * day already past never does.
  */
 export function isVendorAcceptingAssignment(vendor: Vendor, request: RoutingRequest): boolean {
+  // §2.5 emergency reassignment ignores the accept-cutoff (the rescue is
+  // intentionally after it).
+  if (request.bypassAcceptCutoff) return true;
   const cutoff = vendor.orderAcceptCutoff;
   if (!cutoff) return true;
   if (request.nowLocalDate < request.date) return true;
@@ -150,6 +160,19 @@ export function rankCandidates(
     if (Math.abs(qualityDelta) > 1e-9) return qualityDelta;
     return a.vendor._id.toHexString().localeCompare(b.vendor._id.toHexString());
   });
+}
+
+/**
+ * Whether ANY active candidate's service area covers the point (Phase O.1).
+ * This is the coverage-gap test that distinguishes a true cold-start gap from
+ * a transient all-busy day: it ignores every transient gate (hours, capacity,
+ * sold-out, accept-cutoff) and asks only "could some vendor here ever serve
+ * this address?". A `false` result means the user should be waitlisted
+ * (`fallbacks.md` §1.1/§1.2); a `true` result with no eligible vendor is a
+ * transient miss, handled by the O.2 retry path, not the waitlist.
+ */
+export function hasAreaCoverage(candidates: RoutingCandidate[], point: GeoPoint): boolean {
+  return candidates.some((candidate) => isWithinServiceArea(candidate.vendor, point));
 }
 
 /** Decide which vendor fulfils an order, or report that none can. */

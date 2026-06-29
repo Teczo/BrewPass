@@ -333,8 +333,11 @@ async function applyTransition(
     await handleOrderDelivered(orderId, now);
     if (order) {
       // Best-effort quality + SMS; must not fail the (already money-gating) tx.
+      // A delivered order always has a vendor (guard narrows the Phase O.2 type).
       try {
-        await recordDelivery(order.vendorId, isOnTime(now, order.deliverAt), now);
+        if (order.vendorId) {
+          await recordDelivery(order.vendorId, isOnTime(now, order.deliverAt), now);
+        }
       } catch (error) {
         console.error(`On-time metric for order ${orderId.toHexString()} failed:`, error);
       }
@@ -490,6 +493,27 @@ export async function adminMarkDelivered(
     return { ok: false, reason: "not_out_for_delivery" };
   }
   await applyTransition(orderId, "delivered", "ADMIN_OVERRIDE", now);
+  return { ok: true };
+}
+
+/**
+ * Admin override: force a stuck courier order to `failed` (Phase O.4 §5.6) — for
+ * when the courier never completed and the webhook never arrived. Goes through
+ * the same idempotent transition as a courier-failure webhook: the order is
+ * marked `failed` and the day is auto-refunded (no transfer was ever released —
+ * payout is delivery-gated, rule #4), exactly once.
+ */
+export async function adminMarkFailed(
+  orderId: ObjectId,
+  now: Date = new Date(),
+): Promise<AdminCourierResult> {
+  const orders = await ordersCollection();
+  const order = await orders.findOne({ _id: orderId });
+  if (!order) return { ok: false, reason: "order_not_found" };
+  if (order.status !== "out_for_delivery") {
+    return { ok: false, reason: "not_out_for_delivery" };
+  }
+  await applyTransition(orderId, "failed", "ADMIN_OVERRIDE", now);
   return { ok: true };
 }
 

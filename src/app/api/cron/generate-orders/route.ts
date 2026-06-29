@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { generateOfficeOrdersForDate } from "@/lib/corporate/office-orders";
 import { reconcileOverlapsForDate } from "@/lib/corporate/overlap";
 import { rejectUnauthorizedCron } from "@/lib/cron";
-import { generateOrdersForDate, notifyOrdersForDate } from "@/lib/order-engine/engine";
+import {
+  generateOrdersForDate,
+  notifyOrdersForDate,
+  reattemptUnroutedOrders,
+} from "@/lib/order-engine/engine";
 import { tomorrowLocalDate } from "@/lib/time";
 
 export const runtime = "nodejs";
@@ -30,11 +34,16 @@ export async function GET(request: Request) {
   // both sides exist — skips at most one side per the member's own rule, before
   // the night-before notification goes out. Members without a rule keep both.
   const overlap = await reconcileOverlapsForDate(date, now);
+  // Phase O.2 (§2.2): re-route any still-unrouted orders (across all upcoming
+  // dates) before notifying, so an order routed tonight gets its night-before
+  // reminder. Runs after generation so tonight's new unrouted orders are
+  // included too.
+  const reattempt = await reattemptUnroutedOrders(now);
   const notification = await notifyOrdersForDate(date, now);
 
   console.log(
     "generate-orders:",
-    JSON.stringify({ generation, officeGeneration, overlap, notification }),
+    JSON.stringify({ generation, officeGeneration, overlap, reattempt, notification }),
   );
-  return NextResponse.json({ generation, officeGeneration, overlap, notification });
+  return NextResponse.json({ generation, officeGeneration, overlap, reattempt, notification });
 }

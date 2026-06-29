@@ -5,6 +5,7 @@ import { newDocumentMeta } from "@/lib/models";
 import type { Vendor } from "@/lib/models";
 import type { CoverageItem } from "@/lib/menu";
 import {
+  hasAreaCoverage,
   isEligible,
   isNotSoldOut,
   isUnderSlotCap,
@@ -66,6 +67,32 @@ const baseRequest: RoutingRequest = {
   nowLocalDate: "2026-06-09",
   nowLocalTime: "20:00",
 };
+
+describe("hasAreaCoverage (Phase O.1 cold-start gap test)", () => {
+  it("is false when no candidate's service area covers the point (coverage gap)", () => {
+    const far = makeVendor({ geo: { lat: 3.5, lng: 102.0 }, serviceAreaRadiusKm: 5 });
+    expect(hasAreaCoverage([makeCandidate(far)], POINT)).toBe(false);
+    // No vendors at all (true cold start) is also a coverage gap.
+    expect(hasAreaCoverage([], POINT)).toBe(false);
+  });
+
+  it("is true when a candidate covers the point, even if it's transiently unavailable", () => {
+    // Sold out + at capacity + closed today, but its area still covers the
+    // point — that's a transient miss (O.2), not a coverage gap, so no waitlist.
+    const covering = makeVendor({
+      geo: { lat: 3.14, lng: 101.69 },
+      serviceAreaRadiusKm: 5,
+      status: "offline",
+      soldOutDates: [baseRequest.date],
+    });
+    expect(hasAreaCoverage([makeCandidate(covering, { assignedCount: 999 })], POINT)).toBe(true);
+  });
+
+  it("treats an unbounded (unset radius) vendor as covering everywhere", () => {
+    const unbounded = makeVendor({ geo: { lat: 5.41, lng: 100.33 } }); // Penang, no radius
+    expect(hasAreaCoverage([makeCandidate(unbounded)], POINT)).toBe(true);
+  });
+});
 
 describe("isVendorOpenAt", () => {
   const hours = [{ day: 3, open: "08:00", close: "18:00" }];
@@ -214,6 +241,15 @@ describe("isVendorAcceptingAssignment", () => {
   it("has no effect when the vendor sets no cutoff", () => {
     const sameDayLate = { ...baseRequest, nowLocalDate: "2026-06-10", nowLocalTime: "23:00" };
     expect(isVendorAcceptingAssignment(makeVendor(), sameDayLate)).toBe(true);
+  });
+
+  it("bypassAcceptCutoff overrides the gate (Phase O.2 §2.5 emergency reassignment)", () => {
+    // Same delivery day, well past the 04:00 cutoff — normally rejected.
+    const pastCutoff = { ...baseRequest, nowLocalDate: "2026-06-10", nowLocalTime: "09:00" };
+    expect(isVendorAcceptingAssignment(vendor, pastCutoff)).toBe(false);
+    expect(isVendorAcceptingAssignment(vendor, { ...pastCutoff, bypassAcceptCutoff: true })).toBe(
+      true,
+    );
   });
 });
 

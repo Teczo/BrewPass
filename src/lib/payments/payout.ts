@@ -118,12 +118,16 @@ export async function sweepDailyBatchPayouts(
     skipped: [],
   };
 
-  const vendorIds = await orders.distinct("vendorId", {
-    date: localDate,
-    status: "delivered",
-    chargeStatus: "charged",
-    payoutStatus: "pending",
-  });
+  // `delivered` orders always carry a vendor; the filter narrows the optional
+  // type from Phase O.2 (an unrouted order never reaches `delivered`).
+  const vendorIds = (
+    await orders.distinct("vendorId", {
+      date: localDate,
+      status: "delivered",
+      chargeStatus: "charged",
+      payoutStatus: "pending",
+    })
+  ).filter((id): id is ObjectId => id != null);
 
   for (const vendorId of vendorIds) {
     const vendor = await vendors.findOne({ _id: vendorId });

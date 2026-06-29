@@ -20,12 +20,19 @@ export async function GET() {
   const orders = await ordersCollection();
   const docs = await orders.find({ userId: auth.user._id }).sort({ date: -1 }).limit(30).toArray();
 
-  const vendorExternalIds = await vendorExternalIdsByHex(docs.map((order) => order.vendorId));
+  // Unrouted orders (Phase O.2) have no vendor — filter them out of the lookup
+  // and serialize their vendor reference as null (v1Order already supports it).
+  const vendorExternalIds = await vendorExternalIdsByHex(
+    docs.flatMap((order) => (order.vendorId ? [order.vendorId] : [])),
+  );
 
   return NextResponse.json({
     today: localDateOf(new Date()),
     orders: docs.map((order) =>
-      v1Order(order, vendorExternalIds.get(order.vendorId.toHexString()) ?? null),
+      v1Order(
+        order,
+        order.vendorId ? (vendorExternalIds.get(order.vendorId.toHexString()) ?? null) : null,
+      ),
     ),
   });
 }

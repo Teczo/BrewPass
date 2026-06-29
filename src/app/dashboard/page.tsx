@@ -8,9 +8,12 @@ import { buttonClasses } from "@/components/ui/button";
 import { Card, SectionLabel } from "@/components/ui/card";
 import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { UpcomingOrder } from "@/components/upcoming-order";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { Notice } from "@/components/ui/notice";
 import { ADD_ON_LIST } from "@/lib/addons";
 import { getCurrentSubscription } from "@/lib/billing";
 import { findUserOverlaps } from "@/lib/corporate/overlap";
+import { hasCoverageForAnyPoint } from "@/lib/launch-waitlist";
 import { locationsCollection, ordersCollection, ratingsCollection } from "@/lib/collections";
 import { formatMyr } from "@/lib/format";
 import { locationToJson, orderToJson } from "@/lib/serializers";
@@ -76,6 +79,15 @@ export default async function DashboardPage() {
       .toArray(),
   ]);
   const hasLiveSubscription = subscription !== null && subscription.status !== "canceled";
+
+  // Phase O.1 cold-start (fallbacks.md §1.1/§1.2): if no active vendor covers
+  // any of the user's delivery points, they're in a coverage gap — show a
+  // launching-soon banner + sample slot rather than a real order. Driven live so
+  // a brand-new user sees the right state on day one; the nightly cron records
+  // their waitlist entry and emails them once a vendor goes live.
+  const inCoverageGap =
+    !upcomingOrder && !(await hasCoverageForAnyPoint(locationDocs.map((loc) => loc.geo)));
+  const waitlistAddress = locationDocs[0]?.address;
 
   // Phase J.5: advisory same-day personal/office overlap notice. Only shown
   // until the member sets a standing rule (then overlaps reconcile silently at
@@ -154,19 +166,47 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {overlaps.length > 0 && <OverlapNotice overlaps={overlaps} />}
+      {overlaps.length > 0 && (
+        <ErrorBoundary label="your coffee overlap notice">
+          <OverlapNotice overlaps={overlaps} />
+        </ErrorBoundary>
+      )}
+
+      {inCoverageGap && (
+        <>
+          <Notice icon="☕">
+            {waitlistAddress
+              ? `No vendors deliver to ${waitlistAddress} yet — we'll email you the day your first vendor goes live.`
+              : "We're launching in your area soon — we'll email you the day your first vendor goes live."}
+          </Notice>
+          <Card className="flex flex-col items-center gap-2 p-8 text-center">
+            <span className="text-4xl" aria-hidden>
+              ☕
+            </span>
+            <p className="font-display text-lg text-espresso">Your daily coffee starts here</p>
+            <p className="text-sm text-coffee">
+              Once a café near you goes live, tomorrow&apos;s coffee will appear in this spot — no
+              daily taps needed.
+            </p>
+          </Card>
+        </>
+      )}
 
       {upcomingOrder && (
-        <UpcomingOrder
-          order={orderToJson(upcomingOrder)}
-          locations={locationDocs.map(locationToJson)}
-          addOnOptions={addOnOptions}
-          drinkOptions={drinkOptionsFrom(await loadActiveTaxonomy()) ?? DEFAULT_DRINK_OPTIONS}
-        />
+        <ErrorBoundary label="your upcoming coffee">
+          <UpcomingOrder
+            order={orderToJson(upcomingOrder)}
+            locations={locationDocs.map(locationToJson)}
+            addOnOptions={addOnOptions}
+            drinkOptions={drinkOptionsFrom(await loadActiveTaxonomy()) ?? DEFAULT_DRINK_OPTIONS}
+          />
+        </ErrorBoundary>
       )}
 
       {upcomingOrder?.status === "out_for_delivery" && (
-        <DeliveryTracker orderId={upcomingOrder._id.toHexString()} />
+        <ErrorBoundary label="delivery tracking">
+          <DeliveryTracker orderId={upcomingOrder._id.toHexString()} />
+        </ErrorBoundary>
       )}
 
       {hasLiveSubscription && (
