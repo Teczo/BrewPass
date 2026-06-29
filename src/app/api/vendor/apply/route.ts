@@ -51,8 +51,13 @@ export async function POST(request: Request) {
 
   const geocoded = await geocodeAddress(input.address);
   if (!geocoded) {
+    // §12.1: a clear, recoverable error — the applicant fixes the address and
+    // re-submits (a vendor needs a geocoded location for routing/service area).
     return NextResponse.json(
-      { error: "Address could not be found. Try a more specific address." },
+      {
+        error:
+          "We couldn't locate that address on the map. Please check it (include city + postcode) and try again.",
+      },
       { status: 422 },
     );
   }

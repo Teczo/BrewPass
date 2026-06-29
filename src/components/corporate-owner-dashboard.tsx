@@ -352,6 +352,27 @@ export function CorporateOwnerDashboard({
   const reusableCode = joinCodes.find((c) => c.type === "reusable" && c.active) ?? null;
   const singleUseCodes = joinCodes.filter((c) => c.type === "single_use" && c.active);
 
+  // Phase O.6 (fallbacks.md §8.4/§8.8) — owner setup checklist. Office orders
+  // only generate once the company card + office defaults are set (and, in
+  // bundle mode, the bundle coffee). The join code is needed for members to
+  // join but isn't itself a generation blocker. This surfaces the same skip
+  // reasons the 8 PM cron already enforces server-side.
+  const bundleMode = account.selectionMode === "bundle";
+  const setupItems = [
+    { key: "card", label: "Company card", done: account.cardOnFile },
+    { key: "defaults", label: "Office defaults", done: account.officeDefaults != null },
+    ...(bundleMode
+      ? [{ key: "bundle", label: "Bundle coffee", done: account.bundleDrink != null }]
+      : []),
+    {
+      key: "code",
+      label: "Join code",
+      done: reusableCode != null || singleUseCodes.length > 0,
+    },
+  ];
+  const setupComplete = setupItems.every((item) => item.done);
+  const generationBlockers = setupItems.filter((item) => item.key !== "code" && !item.done);
+
   async function copyCode(code: string) {
     try {
       await navigator.clipboard.writeText(code);
@@ -374,6 +395,31 @@ export function CorporateOwnerDashboard({
   return (
     <div className="flex flex-col gap-5">
       {error && <p className="text-sm text-terracotta">{error}</p>}
+
+      {!setupComplete && (
+        <Section title="Finish office setup">
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {setupItems.map((item) => (
+              <li key={item.key} className="flex items-center gap-2">
+                <span className={item.done ? "text-sage" : "text-muted"} aria-hidden>
+                  {item.done ? "✓" : "○"}
+                </span>
+                <span className={item.done ? "text-espresso" : "text-coffee"}>{item.label}</span>
+                {!item.done && <span className="text-xs text-muted">— not set</span>}
+              </li>
+            ))}
+          </ul>
+          {generationBlockers.length > 0 && (
+            <p className="text-sm text-terracotta">
+              Office coffee starts once you set{" "}
+              {generationBlockers.map((b) => b.label.toLowerCase()).join(" and ")}.
+              {bundleMode &&
+                !account.bundleDrink &&
+                " In bundle mode the bundle coffee is the one everyone gets."}
+            </p>
+          )}
+        </Section>
+      )}
 
       <Section title="Office coffee setup">
         <div className="flex items-center justify-between gap-3">

@@ -34,8 +34,13 @@ export async function POST(request: Request) {
 
   const geocoded = await geocodeAddress(parsed.data.address);
   if (!geocoded) {
+    // §12.2: a geocode miss is a clear, recoverable error, not a crash — point
+    // the user at the GPS fallback rather than blocking onboarding.
     return NextResponse.json(
-      { error: "Address could not be found. Try a more specific address." },
+      {
+        error:
+          'We couldn\'t verify that address. Check it for typos, or tap "Use my current location" to set it from your GPS.',
+      },
       { status: 422 },
     );
   }
