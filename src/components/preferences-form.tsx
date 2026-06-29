@@ -3,18 +3,24 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { SectionLabel } from "@/components/ui/card";
+import { Input, Label } from "@/components/ui/field";
 import type { LocationJson, PreferenceJson } from "@/lib/serializers";
 import { DEFAULT_DRINK_OPTIONS, ensureOption, type DrinkOptions } from "@/lib/taxonomy-options";
 
 const WEEKDAYS = [
-  { value: 1, label: "Mon" },
-  { value: 2, label: "Tue" },
-  { value: 3, label: "Wed" },
-  { value: 4, label: "Thu" },
-  { value: 5, label: "Fri" },
-  { value: 6, label: "Sat" },
-  { value: 7, label: "Sun" },
+  { value: 1, label: "M" },
+  { value: 2, label: "T" },
+  { value: 3, label: "W" },
+  { value: 4, label: "T" },
+  { value: 5, label: "F" },
+  { value: 6, label: "S" },
+  { value: 7, label: "S" },
 ];
+
+const SUGAR_LEVELS = [0, 1, 2, 3, 4, 5];
 
 export interface PreferencesFormProps {
   locations: LocationJson[];
@@ -84,142 +90,131 @@ export function PreferencesForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1 text-sm font-medium">
-        Your usual drink
-        <select
-          className="rounded-md border border-neutral-300 px-3 py-2"
-          value={drink}
-          onChange={(e) => setDrink(e.target.value)}
-          required
-        >
-          {drinks.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div className="grid grid-cols-2 gap-4">
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Size
-          <select
-            className="rounded-md border border-neutral-300 px-3 py-2"
-            value={size}
-            onChange={(e) => setSize(e.target.value)}
-          >
-            {sizes.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Milk
-          <select
-            className="rounded-md border border-neutral-300 px-3 py-2"
-            value={milk}
-            onChange={(e) => setMilk(e.target.value)}
-          >
-            {milks.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Sugar
-          <select
-            className="rounded-md border border-neutral-300 px-3 py-2"
-            value={sugar}
-            onChange={(e) => setSugar(Number(e.target.value))}
-          >
-            {[0, 1, 2, 3, 4, 5].map((level) => (
-              <option key={level} value={level}>
-                {level === 0 ? "No sugar" : `${level}`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Strength
-          <select
-            className="rounded-md border border-neutral-300 px-3 py-2"
-            value={strength}
-            onChange={(e) => setStrength(e.target.value)}
-          >
-            {strengths.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <fieldset className="flex flex-col gap-2 text-sm font-medium">
-        <legend className="mb-1">Delivery days</legend>
+    <form onSubmit={onSubmit} className="flex flex-col gap-6">
+      <fieldset className="flex flex-col gap-2.5">
+        <SectionLabel>Drink</SectionLabel>
         <div className="flex flex-wrap gap-2">
-          {WEEKDAYS.map((weekday) => (
-            <label
-              key={weekday.value}
-              className={`cursor-pointer rounded-md border px-3 py-2 ${
-                days.includes(weekday.value)
-                  ? "border-amber-800 bg-amber-50 text-amber-900"
-                  : "border-neutral-300"
-              }`}
+          {drinks.map((option) => (
+            <Chip
+              key={option.value}
+              selected={drink === option.value}
+              onClick={() => setDrink(option.value)}
             >
-              <input
-                type="checkbox"
-                className="sr-only"
-                checked={days.includes(weekday.value)}
-                onChange={() => toggleDay(weekday.value)}
-              />
-              {weekday.label}
-            </label>
+              {option.label}
+            </Chip>
           ))}
         </div>
       </fieldset>
 
-      <div className="grid grid-cols-2 gap-4">
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Delivery time
-          <input
-            type="time"
-            className="rounded-md border border-neutral-300 px-3 py-2"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            required
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Deliver to
-          <select
-            className="rounded-md border border-neutral-300 px-3 py-2"
-            value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
-            required
-          >
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      <fieldset className="flex flex-col gap-2.5">
+        <SectionLabel>Size</SectionLabel>
+        <div className="flex flex-wrap gap-2">
+          {sizes.map((option) => (
+            <Chip
+              key={option.value}
+              selected={size === option.value}
+              onClick={() => setSize(option.value)}
+            >
+              {option.label}
+            </Chip>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2.5">
+        <SectionLabel>Milk</SectionLabel>
+        <div className="flex flex-wrap gap-2">
+          {milks.map((option) => (
+            <Chip
+              key={option.value}
+              selected={milk === option.value}
+              onClick={() => setMilk(option.value)}
+            >
+              {option.label}
+            </Chip>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2.5">
+        <SectionLabel>Strength</SectionLabel>
+        <div className="flex flex-wrap gap-2">
+          {strengths.map((option) => (
+            <Chip
+              key={option.value}
+              selected={strength === option.value}
+              onClick={() => setStrength(option.value)}
+            >
+              {option.label}
+            </Chip>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2.5">
+        <SectionLabel>Sugar</SectionLabel>
+        <div className="flex flex-wrap gap-2">
+          {SUGAR_LEVELS.map((level) => (
+            <Chip
+              key={level}
+              selected={sugar === level}
+              onClick={() => setSugar(level)}
+            >
+              {level === 0 ? "None" : level}
+            </Chip>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2.5">
+        <SectionLabel>Schedule</SectionLabel>
+        <div className="flex flex-wrap gap-2">
+          {WEEKDAYS.map((weekday) => (
+            <Chip
+              key={weekday.value}
+              selected={days.includes(weekday.value)}
+              onClick={() => toggleDay(weekday.value)}
+              className="w-11"
+              aria-label={`Day ${weekday.value}`}
+            >
+              {weekday.label}
+            </Chip>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="time">Delivery time</Label>
+        <Input
+          id="time"
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          required
+        />
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button
-        type="submit"
-        disabled={saving || days.length === 0}
-        className="rounded-md bg-amber-800 px-4 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-      >
-        {saving ? "Saving…" : "Finish setup"}
-      </button>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="deliver-to">Deliver to</Label>
+        <select
+          id="deliver-to"
+          className="w-full rounded-xl border border-border bg-field px-3.5 py-3 text-[15px] font-medium text-ink focus:border-coffee focus:outline-none"
+          value={locationId}
+          onChange={(e) => setLocationId(e.target.value)}
+          required
+        >
+          {locations.map((location) => (
+            <option key={location.id} value={location.id}>
+              {location.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {error && <p className="text-sm text-terracotta">{error}</p>}
+      <Button type="submit" disabled={saving || days.length === 0} fullWidth>
+        {saving ? "Saving…" : "Continue"}
+      </Button>
     </form>
   );
 }

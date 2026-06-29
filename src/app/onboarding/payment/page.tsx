@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 
 import { SaveCardButton } from "@/components/save-card-button";
 import { StepIndicator } from "@/components/step-indicator";
+import { buttonClasses } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import { getCurrentSubscription } from "@/lib/billing";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
@@ -32,41 +35,52 @@ export default async function OnboardingPaymentPage({
     <section className="flex flex-col gap-6">
       <StepIndicator current={4} />
 
-      <div className="flex flex-col gap-3 rounded-md border border-neutral-200 p-5">
-        <h1 className="text-xl font-semibold tracking-tight">Add your card</h1>
-        <p className="text-sm text-neutral-500">
-          No subscription fee and no charge today. We save your card now and charge it only for the
-          coffee you actually get — each day, at that day&apos;s cutoff. You can pause or stop any
-          time.
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-[26px] leading-tight text-espresso">
+          Save a card to finish
+        </h1>
+        <p className="text-sm text-coffee">
+          No subscription fee. You&apos;re charged only for the coffee you
+          actually get — the morning it&apos;s made. Pause or stop any time.
         </p>
+      </header>
 
+      <Card className="flex flex-col gap-4 p-6">
         {params.canceled && (
-          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <Notice tone="amber" icon="⚠️">
             Card setup was canceled — no card saved yet.
-          </p>
+          </Notice>
         )}
 
         {cardSaved ? (
           <>
-            <p className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-              Card saved — you&apos;re all set. Your coffee starts on your next scheduled day.
-            </p>
-            <Link
-              href="/dashboard"
-              className="rounded-md bg-amber-800 px-4 py-2 text-center font-medium text-white hover:bg-amber-700"
-            >
+            <Notice tone="sage" icon="✓">
+              Card saved — you&apos;re all set. Your coffee starts on your next
+              scheduled day.
+            </Notice>
+            <Link href="/dashboard" className={buttonClasses("primary", "w-full")}>
               Go to dashboard
             </Link>
           </>
         ) : (
           <>
-            <SaveCardButton returnTo="onboarding" label="Save my card & finish" />
-            <Link href="/dashboard" className="text-sm text-neutral-500 hover:underline">
+            <SaveCardButton
+              returnTo="onboarding"
+              label="Save my card & finish"
+              className={buttonClasses("primary", "w-full")}
+            />
+            <p className="text-center text-xs text-muted">
+              Saved securely with Stripe · no charge today
+            </p>
+            <Link
+              href="/dashboard"
+              className="text-center text-sm font-semibold text-coffee hover:underline"
+            >
               I&apos;ll add it later
             </Link>
           </>
         )}
-      </div>
+      </Card>
     </section>
   );
 }

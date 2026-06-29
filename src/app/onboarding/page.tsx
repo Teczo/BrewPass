@@ -14,6 +14,14 @@ export default async function OnboardingProfilePage() {
   return (
     <section className="flex flex-col gap-6">
       <StepIndicator current={1} />
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-[26px] leading-tight text-espresso">
+          Let&apos;s get you set up
+        </h1>
+        <p className="text-sm text-coffee">
+          First, the basics — so your barista knows who&apos;s getting the coffee.
+        </p>
+      </header>
       <ProfileForm
         initial={{ name: user.name, phone: user.phone ?? "", role: user.role }}
         nextHref="/onboarding/locations"
