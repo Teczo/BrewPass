@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { buttonClasses } from "@/components/ui/button";
+
 /**
  * Starts a Stripe SetupIntent checkout to save (or replace) the card on file.
  * No charge happens here — coffee is charged per-day at cutoff. Used in the
@@ -43,14 +45,11 @@ export function SaveCardButton({
         type="button"
         onClick={start}
         disabled={busy}
-        className={
-          className ??
-          "rounded-md bg-amber-800 px-4 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-        }
+        className={className ?? buttonClasses("primary")}
       >
         {busy ? "Redirecting…" : label}
       </button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-terracotta">{error}</p>}
     </div>
   );
 }

@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Card, SectionLabel } from "@/components/ui/card";
+
 export interface OverlapOfficeJson {
   orderId: string;
   membershipId: string | null;
@@ -66,12 +69,12 @@ export function OverlapNotice({ overlaps }: { overlaps: OverlapDayJson[] }) {
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900">
-      <div>
-        <h2 className="font-semibold">Two coffees coming up</h2>
+    <Card className="flex flex-col gap-3 bg-amber p-5 text-coffee shadow-card">
+      <div className="flex flex-col gap-1">
+        <SectionLabel>Both coffees coming up</SectionLabel>
         <p className="text-sm">
-          You&apos;ve got both a personal and an office coffee on the same day. That&apos;s fine —
-          they&apos;re billed separately, so we&apos;ll keep both unless you&apos;d rather not.
+          A personal and an office coffee on the same day. They&apos;re on different cards — no
+          conflict — so we&apos;ll keep both unless you&apos;d rather not.
         </p>
       </div>
 
@@ -81,54 +84,41 @@ export function OverlapNotice({ overlaps }: { overlaps: OverlapDayJson[] }) {
         return (
           <div
             key={day.date}
-            className="flex flex-col gap-2 rounded-md border border-amber-200 bg-white p-3"
+            className="flex flex-col gap-3 rounded-2xl bg-surface p-4"
           >
-            <p className="text-sm text-neutral-700">
-              <span className="font-medium">{day.date}</span> — personal{" "}
-              <span className="font-medium">{day.personal.drink}</span> and office{" "}
-              <span className="font-medium">{office?.drink}</span>
+            <p className="text-sm text-coffee">
+              <span className="font-semibold text-espresso">{day.date}</span> — personal{" "}
+              <span className="font-semibold text-espresso">{day.personal.drink}</span> and office{" "}
+              <span className="font-semibold text-espresso">{office?.drink}</span>
               {office ? ` from ${office.company}` : ""}
             </p>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => keepBoth(day.date)}
-                className="rounded-md bg-amber-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-              >
+              <Button disabled={busy} onClick={() => keepBoth(day.date)}>
                 Keep both
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => cancel(day.date, "personal")}
-                className="rounded-md border border-amber-800 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-              >
-                Skip my personal coffee
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button variant="secondary" disabled={busy} onClick={() => cancel(day.date, "personal")}>
+                Skip personal
+              </Button>
+              <Button
+                variant="secondary"
                 disabled={busy || !officeDeclinable}
                 title={
-                  officeDeclinable
-                    ? undefined
-                    : "Your company doesn't allow skipping office coffee."
+                  officeDeclinable ? undefined : "Your company doesn't allow skipping office coffee."
                 }
                 onClick={() => cancel(day.date, "office")}
-                className="rounded-md border border-amber-800 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
               >
-                Skip the office coffee
-              </button>
+                Skip office
+              </Button>
             </div>
           </div>
         );
       })}
 
-      <label className="flex items-center gap-2 text-xs">
+      <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
         Remember my choice for future overlap days (no daily asking)
       </label>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-    </section>
+      {error && <p className="text-sm text-terracotta">{error}</p>}
+    </Card>
   );
 }

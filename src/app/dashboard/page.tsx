@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { DeliveryTracker } from "@/components/delivery-tracker";
-import { OfficeCoffeeTracker } from "@/components/office-coffee-tracker";
 import { OverlapNotice } from "@/components/overlap-notice";
 import { RateOrder } from "@/components/rate-order";
 import { buttonClasses } from "@/components/ui/button";
@@ -11,7 +10,6 @@ import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { UpcomingOrder } from "@/components/upcoming-order";
 import { ADD_ON_LIST } from "@/lib/addons";
 import { getCurrentSubscription } from "@/lib/billing";
-import { listMemberOfficeCoffees } from "@/lib/corporate/office-tracking";
 import { findUserOverlaps } from "@/lib/corporate/overlap";
 import { locationsCollection, ordersCollection, ratingsCollection } from "@/lib/collections";
 import { formatMyr } from "@/lib/format";
@@ -83,10 +81,6 @@ export default async function DashboardPage() {
   // until the member sets a standing rule (then overlaps reconcile silently at
   // generation) — keeping the "user does nothing daily" promise (rule #17).
   const overlaps = user.overlapRule ? [] : await findUserOverlaps(user._id, new Date());
-
-  // Phase J.6: the member's office coffees (details + ETA + status). Empty for
-  // members without an office; rendered as a compact, map-optional list.
-  const officeCoffees = await listMemberOfficeCoffees(user._id, new Date());
 
   // Phase G: which recent orders the user has already rated (to show stars).
   const ratingByOrderId = new Map(
@@ -188,8 +182,6 @@ export default async function DashboardPage() {
           </Link>
         </Card>
       )}
-
-      {officeCoffees.length > 0 && <OfficeCoffeeTracker items={officeCoffees} />}
 
       {recentOrders.length > 0 && (
         <section className="flex flex-col gap-3">

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
@@ -8,7 +7,11 @@ import {
 } from "@/components/corporate-owner-dashboard";
 import { CreateCorporateAccount } from "@/components/corporate-panel";
 import { JoinCompanyPanel } from "@/components/join-company-panel";
+import { OfficeCoffeeEditor } from "@/components/office-coffee-editor";
+import { OfficeCoffeeTracker } from "@/components/office-coffee-tracker";
 import { OfficePackPanel } from "@/components/office-pack-panel";
+import { Card, SectionLabel } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import {
   corporateAccountsCollection,
   corporateJoinCodesCollection,
@@ -19,6 +22,7 @@ import {
   resolveMemberSelfSelect,
   resolveSelectionMode,
 } from "@/lib/corporate/autonomy";
+import { listMemberOfficeCoffees } from "@/lib/corporate/office-tracking";
 import { buildOwnerRoster, listMemberOffices } from "@/lib/corporate/roster";
 import { drinkOptionsFrom, loadActiveTaxonomy } from "@/lib/taxonomy";
 import { DEFAULT_DRINK_OPTIONS } from "@/lib/taxonomy-options";
@@ -96,35 +100,42 @@ export default async function CorporatePage({
   }
 
   // Member-side: which companies the user belongs to (independent of ownership).
-  const offices = await listMemberOffices(user._id);
+  const [offices, officeCoffees, taxonomy] = await Promise.all([
+    listMemberOffices(user._id),
+    listMemberOfficeCoffees(user._id, new Date()),
+    loadActiveTaxonomy(),
+  ]);
+  const memberDrinkOptions = drinkOptionsFrom(taxonomy) ?? DEFAULT_DRINK_OPTIONS;
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 p-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Office coffee</h1>
-          <p className="text-sm text-neutral-500">
-            Run your team&apos;s coffee, or join a company with a code. Billed per delivered office
-            coffee on the company card — no seats.
-          </p>
-        </div>
-        <Link href="/dashboard" className="text-sm text-amber-800 hover:underline">
-          ← Dashboard
-        </Link>
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 p-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-[26px] leading-tight text-espresso">Office coffee</h1>
+        <p className="text-sm text-coffee">
+          Run your team&apos;s coffee, or join a company with a code. Billed per delivered office
+          coffee on the company card — no seats.
+        </p>
       </header>
 
       {params.card && (
-        <p className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+        <Notice tone="sage" icon="✓">
           Company card saved — office coffee will be billed here per delivery.
-        </p>
+        </Notice>
       )}
       {params.card_canceled && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <Notice tone="amber" icon="⚠️">
           Card setup canceled — no card was saved.
-        </p>
+        </Notice>
       )}
 
+      {/* Member-side: live tracking for the member's own office coffee (relocated
+          here from Home in N.8). */}
+      {officeCoffees.length > 0 && <OfficeCoffeeTracker items={officeCoffees} />}
+
       <JoinCompanyPanel offices={offices} />
+
+      {/* Member-side: set your own office coffee (gated server-side by autonomy). */}
+      {offices.length > 0 && <OfficeCoffeeEditor drinkOptions={memberDrinkOptions} />}
 
       {ownerProps ? (
         <>
@@ -149,13 +160,13 @@ export default async function CorporatePage({
 
 function CreateCorporateCta() {
   return (
-    <section className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4">
-      <h2 className="font-semibold">Run coffee for your team</h2>
-      <p className="text-sm text-neutral-500">
+    <Card className="flex flex-col gap-3 p-5">
+      <SectionLabel>Run coffee for your team</SectionLabel>
+      <p className="text-sm text-coffee">
         Create a company to invite staff by code, set office defaults, and pay per delivered coffee
         on one company card.
       </p>
       <CreateCorporateAccount />
-    </section>
+    </Card>
   );
 }
