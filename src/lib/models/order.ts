@@ -63,8 +63,16 @@ export const orderSchema = baseDocumentSchema.extend({
   /** Drink snapshot — never re-read live preferences after generation. */
   drink: drinkSpecSchema,
   location: orderLocationSnapshotSchema,
-  /** Fulfilling vendor (v1 cafeId, renamed in the Phase A migration). */
-  vendorId: objectIdSchema,
+  /**
+   * Fulfilling vendor (v1 cafeId, renamed in the Phase A migration). Optional
+   * since Phase O.2 (`fallbacks.md` §2.2): when routing finds no eligible vendor
+   * on a day that DOES have area coverage (a transient all-busy day, not a
+   * cold-start gap), the order is persisted `scheduled` with no vendor and
+   * retried on each nightly pass. It is either routed before its cutoff or
+   * marked `failed`/`no_vendor_available` at cutoff (never charged). A coverage
+   * GAP is waitlisted instead (O.1) and never produces a vendorless order.
+   */
+  vendorId: objectIdSchema.optional(),
   /**
    * The confirmed monthly list this order was created from (Phase D.5).
    * Unset for orders generated directly by the nightly job (users without a
@@ -153,6 +161,13 @@ export const orderSchema = baseDocumentSchema.extend({
   modifiedByUserAt: z.date().optional(),
   /** Populated when status is `failed`. */
   failureReason: z.string().optional(),
+  /**
+   * Phase O.2 (`fallbacks.md` §2.2) — set on a `no_vendor_available` failure
+   * when the user has hit 3+ consecutive such failures, a likely coverage-gap
+   * signal. Surfaced to the operator in the admin failures panel. Advisory
+   * flag only; it never changes charging or routing.
+   */
+  coverageGapEscalated: z.boolean().optional(),
   /** Set when an admin returned this order's quota credit — guards double refunds. */
   quotaRefundedAt: z.date().optional(),
   /**

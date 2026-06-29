@@ -195,7 +195,7 @@ describe("ordersFromList", () => {
     expect(orders).toHaveLength(2);
     expect(orders[0].status).toBe("scheduled");
     expect(orders[0].monthlyListId?.equals(list._id)).toBe(true);
-    expect(orders[0].vendorId.equals(vendorId)).toBe(true);
+    expect(orders[0].vendorId?.equals(vendorId)).toBe(true);
     expect(orders[0].priceSen).toBe(1200);
     expect(orders[1].priceSen).toBeUndefined();
     // Cutoff is 06:00 KL = 22:00 UTC the previous day.

@@ -99,6 +99,8 @@ export default async function AdminPage() {
 
   const todayCountByVendor = new Map<string, number>();
   for (const order of todayOrders) {
+    // Unrouted (vendorless, Phase O.2) orders count toward no vendor.
+    if (!order.vendorId) continue;
     const key = order.vendorId.toHexString();
     todayCountByVendor.set(key, (todayCountByVendor.get(key) ?? 0) + 1);
   }
@@ -108,7 +110,9 @@ export default async function AdminPage() {
     customerName: nameById.get(order.userId.toHexString()) ?? "Customer",
     drink: order.drink.drink,
     locationLabel: order.location.label,
-    vendorName: vendorNameById.get(order.vendorId.toHexString()) ?? "?",
+    vendorName: order.vendorId
+      ? (vendorNameById.get(order.vendorId.toHexString()) ?? "?")
+      : "— unrouted",
     status: order.status,
     deliverAt: order.deliverAt.toISOString(),
     failureReason: order.failureReason ?? null,
@@ -217,6 +221,12 @@ export default async function AdminPage() {
               <li key={order._id.toHexString()}>
                 {nameById.get(order.userId.toHexString()) ?? "Customer"} — {order.drink.drink}:{" "}
                 {order.failureReason ?? "unknown"}
+                {/* Phase O.2 (§2.2): 3+ consecutive no-vendor days = likely coverage gap. */}
+                {order.coverageGapEscalated && (
+                  <span className="ml-1 rounded bg-red-200 px-1.5 py-0.5 text-xs font-semibold text-red-900">
+                    coverage gap — 3+ days unrouted
+                  </span>
+                )}
               </li>
             ))}
           </ul>

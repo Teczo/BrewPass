@@ -48,6 +48,11 @@ export async function POST(request: Request, context: RouteContext) {
   if (order.status !== "delivered") {
     return NextResponse.json({ error: "You can only rate a delivered order." }, { status: 409 });
   }
+  // A delivered order always has a vendor; the guard narrows the optional type
+  // introduced for unrouted orders (Phase O.2), which never reach `delivered`.
+  if (!order.vendorId) {
+    return NextResponse.json({ error: "Order has no vendor to rate." }, { status: 409 });
+  }
 
   const now = new Date();
   const ratings = await ratingsCollection();

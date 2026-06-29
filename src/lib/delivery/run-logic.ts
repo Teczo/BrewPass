@@ -10,9 +10,11 @@ import type { DeliveryRunStatus, OrderStatus, PickupStop } from "@/lib/models";
  */
 
 /** The minimum an Order must expose for a run to reason about it. */
+// (vendorId is optional: an unrouted order, Phase O.2, has none — such an order
+// can never be part of a run and is rejected by validateRunComposition.)
 export interface RunOrderView {
   orderId: ObjectId;
-  vendorId: ObjectId;
+  vendorId: ObjectId | undefined;
   status: OrderStatus;
   /** The drop the Order is delivered to — a run requires one shared location. */
   locationId: ObjectId;
@@ -32,7 +34,8 @@ export type RunValidationResult =
         | "contains_pack_order"
         | "mixed_drop_location"
         | "already_in_run"
-        | "uncombinable_status";
+        | "uncombinable_status"
+        | "unrouted_order";
     };
 
 /**
@@ -64,6 +67,10 @@ export function validateRunComposition(orders: RunOrderView[]): RunValidationRes
   if (orders.some((o) => o.deliveryRunId != null)) {
     return { ok: false, reason: "already_in_run" };
   }
+  // An unrouted order (Phase O.2) has no vendor to pick up from.
+  if (orders.some((o) => o.vendorId == null)) {
+    return { ok: false, reason: "unrouted_order" };
+  }
   if (orders.some((o) => !COMBINABLE_STATUSES.has(o.status))) {
     return { ok: false, reason: "uncombinable_status" };
   }
@@ -83,6 +90,9 @@ export function groupOrdersIntoStops(orders: RunOrderView[]): PickupStop[] {
   const byVendor = new Map<string, PickupStop>();
   const routeOrder: string[] = [];
   for (const order of orders) {
+    // Unrouted orders are rejected by validateRunComposition before reaching
+    // here; skip defensively so the type stays honest (Phase O.2).
+    if (!order.vendorId) continue;
     const key = order.vendorId.toHexString();
     let stop = byVendor.get(key);
     if (!stop) {

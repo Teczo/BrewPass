@@ -24,8 +24,14 @@ export async function GET(_request: Request, context: RouteContext) {
   const order = await orders.findOne({ externalId, userId: auth.user._id });
   if (!order) return v1Error(404, "not_found", "Order not found.");
 
-  const vendorExternalIds = await vendorExternalIdsByHex([order.vendorId]);
+  // An unrouted order (Phase O.2) has no vendor yet — serialize it as null.
+  const vendorExternalIds = order.vendorId
+    ? await vendorExternalIdsByHex([order.vendorId])
+    : new Map<string, string>();
   return NextResponse.json({
-    order: v1Order(order, vendorExternalIds.get(order.vendorId.toHexString()) ?? null),
+    order: v1Order(
+      order,
+      order.vendorId ? (vendorExternalIds.get(order.vendorId.toHexString()) ?? null) : null,
+    ),
   });
 }

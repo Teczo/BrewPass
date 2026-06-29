@@ -134,11 +134,14 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     // Phase G: record the delivery + whether it met the promised time (+grace)
-    // for the vendor's on-time rate. Best-effort.
-    try {
-      await recordDelivery(order.vendorId, isOnTime(now, order.deliverAt), now);
-    } catch (error) {
-      console.error(`On-time metric for order ${order._id.toHexString()} failed:`, error);
+    // for the vendor's on-time rate. Best-effort. (A delivered order always has
+    // a vendor; the guard narrows the optional type from Phase O.2.)
+    if (order.vendorId) {
+      try {
+        await recordDelivery(order.vendorId, isOnTime(now, order.deliverAt), now);
+      } catch (error) {
+        console.error(`On-time metric for order ${order._id.toHexString()} failed:`, error);
+      }
     }
 
     // Optional SMS — best-effort, never blocks the transition.

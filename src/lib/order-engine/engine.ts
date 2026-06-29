@@ -17,7 +17,14 @@ import { personalPreferenceFilter } from "@/lib/preferences";
 import type { Order, Subscription } from "@/lib/models";
 import { escapeHtml, sendEmail, sendPushToUser } from "@/lib/notifications";
 import { loadSkippedUserIdsForDate } from "@/lib/monthly-list/service";
-import { buildOrder, evaluateCutoff, evaluateGeneration } from "@/lib/order-engine/logic";
+import {
+  buildOrder,
+  buildUnroutedOrder,
+  countLeadingNoVendorFailures,
+  COVERAGE_GAP_ESCALATION_THRESHOLD,
+  evaluateCutoff,
+  evaluateGeneration,
+} from "@/lib/order-engine/logic";
 import { deliveryHourOf, hasAreaCoverage } from "@/lib/order-engine/routing";
 import { recordWaitlistEntry } from "@/lib/launch-waitlist";
 import {
@@ -48,6 +55,8 @@ export interface GenerationSummary {
   date: string;
   generated: number;
   duplicates: number;
+  /** Phase O.2 — scheduled with no vendor (transient no-vendor day); retried. */
+  unrouted: number;
   skipped: Array<{ subscriptionId: string; reason: string }>;
 }
 
@@ -87,7 +96,13 @@ export async function generateOrdersForDate(
   );
   const weekday = isoWeekdayOf(localDate);
 
-  const summary: GenerationSummary = { date: localDate, generated: 0, duplicates: 0, skipped: [] };
+  const summary: GenerationSummary = {
+    date: localDate,
+    generated: 0,
+    duplicates: 0,
+    unrouted: 0,
+    skipped: [],
+  };
 
   for (const subscription of candidateSubs) {
     const subId = subscription._id.toHexString();
@@ -153,7 +168,28 @@ export async function generateOrdersForDate(
         summary.skipped.push({ subscriptionId: subId, reason: "waitlisted_no_coverage" });
         continue;
       }
-      summary.skipped.push({ subscriptionId: subId, reason: result.reason });
+      // Phase O.2 (§2.2): coverage exists but every vendor is transiently
+      // unavailable today. Persist the order `scheduled` with no vendor so it's
+      // visible and retried each nightly pass; the cutoff job fails it
+      // (no_vendor_available, no charge) only if it's still unrouted by then.
+      const unrouted = buildUnroutedOrder({
+        subscription,
+        preference: preference!,
+        location,
+        localDate,
+        now,
+      });
+      try {
+        await orders.insertOne(unrouted);
+        summary.unrouted += 1;
+        await emitOrderEvent("order.scheduled", unrouted, now);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          summary.duplicates += 1;
+        } else {
+          throw error;
+        }
+      }
       continue;
     }
 
@@ -198,6 +234,122 @@ export async function generateOrdersForDate(
   return summary;
 }
 
+export interface ReattemptSummary {
+  reattempted: number;
+  routed: number;
+  stillUnrouted: number;
+}
+
+/**
+ * Phase O.2 (`fallbacks.md` §2.2) — re-route still-unrouted orders. Each nightly
+ * pass tries to assign a vendor to every `scheduled` order that has none and is
+ * still before its cutoff (a vendor may have come online or freed capacity since
+ * generation). Orders are grouped by date so each date's candidates + capacity
+ * are loaded once and respected across the date's assignments (mirrors
+ * generation). Idempotent: the claim filter (`vendorId` absent) means a re-run
+ * or concurrent pass can never double-assign. An order that can't be routed
+ * stays unrouted and is retried next pass — or failed at its own cutoff.
+ */
+export async function reattemptUnroutedOrders(now: Date = new Date()): Promise<ReattemptSummary> {
+  const [orders, preferences] = await Promise.all([ordersCollection(), preferencesCollection()]);
+  const summary: ReattemptSummary = { reattempted: 0, routed: 0, stillUnrouted: 0 };
+
+  // Still-actionable unrouted personal orders: scheduled, no vendor, pre-cutoff.
+  const unrouted = await orders
+    .find({
+      status: "scheduled",
+      source: "personal",
+      vendorId: { $exists: false },
+      cutoffAt: { $gt: now },
+    })
+    .sort({ date: 1 })
+    .toArray();
+  if (unrouted.length === 0) return summary;
+
+  // Group by delivery date so each date's candidate set is loaded once.
+  const byDate = new Map<string, Order[]>();
+  for (const order of unrouted) {
+    const list = byDate.get(order.date);
+    if (list) list.push(order);
+    else byDate.set(order.date, [order]);
+  }
+
+  for (const [date, dateOrders] of byDate) {
+    const [routingCandidates, timeWindowDiscounts] = await Promise.all([
+      loadRoutingCandidates(date),
+      loadTimeWindowDiscountsByVendor(date),
+    ]);
+    const candidateByVendor = new Map<string, RoutingCandidate>(
+      routingCandidates.map((candidate) => [candidate.vendor._id.toHexString(), candidate]),
+    );
+    const weekday = isoWeekdayOf(date);
+
+    for (const order of dateOrders) {
+      summary.reattempted += 1;
+      const time = localTimeOf(order.deliverAt);
+      const preference = await preferences.findOne(personalPreferenceFilter(order.userId));
+
+      const result = selectVendor(
+        {
+          preferredVendorId: preference?.preferredVendorId ?? null,
+          point: order.location.geo,
+          date,
+          weekday,
+          time,
+          drink: { drink: order.drink.drink, milk: order.drink.milk },
+          nowLocalDate: localDateOf(now),
+          nowLocalTime: localTimeOf(now),
+        },
+        routingCandidates,
+      );
+      if (!result.ok) {
+        summary.stillUnrouted += 1;
+        continue;
+      }
+
+      const candidate = candidateByVendor.get(result.vendorId.toHexString())!;
+      // Snapshot the price now, applying any time-window discount for parity
+      // with generation (Phase K.2).
+      const priceSen = vendorDrinkPriceSen(candidate.menuItems, order.drink.drink);
+      const priced = { ...order, vendorId: candidate.vendor._id } as Order;
+      if (priceSen !== undefined && priceSen !== null) priced.priceSen = priceSen;
+      applyTimeWindowDiscountToOrder(
+        priced,
+        timeWindowDiscounts.get(candidate.vendor._id.toHexString()) ?? [],
+        weekday,
+        time,
+      );
+
+      // Claim atomically: only assign while still unrouted (idempotent).
+      const claim = await orders.updateOne(
+        { _id: order._id, status: "scheduled", vendorId: { $exists: false } },
+        {
+          $set: {
+            vendorId: candidate.vendor._id,
+            assignmentMethod: result.method,
+            ...(priced.priceSen !== undefined ? { priceSen: priced.priceSen } : {}),
+            ...(priced.appliedPromotion ? { appliedPromotion: priced.appliedPromotion } : {}),
+            updatedAt: now,
+          },
+        },
+      );
+      if (claim.modifiedCount !== 1) {
+        // Another pass routed it first — don't occupy capacity twice.
+        continue;
+      }
+      summary.routed += 1;
+      // Occupy a capacity slot for the rest of this run.
+      candidate.assignedCount += 1;
+      const hour = deliveryHourOf(time);
+      candidate.assignedByHour[hour] = (candidate.assignedByHour[hour] ?? 0) + 1;
+      await emitOrderEvent("vendor.assigned", priced, now, {
+        vendorExternalIdHint: candidate.vendor.externalId,
+      });
+    }
+  }
+  return summary;
+}
+
 export interface NotificationSummary {
   date: string;
   notified: number;
@@ -223,8 +375,16 @@ export async function notifyOrdersForDate(
   const summary: NotificationSummary = { date: localDate, notified: 0 };
   const weatherFor = makeWeatherCache();
 
+  // Phase O.2: an unrouted (vendorless) order isn't "ready to go" yet — don't
+  // send the night-before reminder for it. It's notified once the reattempt
+  // pass assigns a vendor, or gets the cutoff failure notice if still unrouted.
   const candidates = await orders
-    .find({ date: localDate, status: "scheduled", notifiedAt: { $exists: false } })
+    .find({
+      date: localDate,
+      status: "scheduled",
+      notifiedAt: { $exists: false },
+      vendorId: { $exists: true },
+    })
     .project<{ _id: ObjectId }>({ _id: 1 })
     .toArray();
 
@@ -342,8 +502,10 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
     // order. If we crash before the decrement the user gets a coffee
     // without quota deduction — the safe direction; double-decrementing
     // is the failure mode we must never allow.
+    // Only routed orders are confirmed/charged here. Vendorless (Phase O.2)
+    // orders are failed separately below — never charged, never handed off.
     const order = await orders.findOneAndUpdate(
-      { status: "scheduled", cutoffAt: { $lte: now } },
+      { status: "scheduled", cutoffAt: { $lte: now }, vendorId: { $exists: true } },
       { $set: { status: "confirmed", confirmedAt: now, updatedAt: now } },
       { returnDocument: "before" },
     );
@@ -414,10 +576,14 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
 
       // Phase G: an order that locks without a decline is an implicit accept
       // for the assigned vendor — feeds the acceptance rate. Best-effort.
-      try {
-        await recordAcceptance(order.vendorId, now);
-      } catch (error) {
-        console.error(`Acceptance metric for order ${order._id.toHexString()} failed:`, error);
+      // (A confirmed order always has a vendor; the guard satisfies the
+      // optional type added in Phase O.2.)
+      if (order.vendorId) {
+        try {
+          await recordAcceptance(order.vendorId, now);
+        } catch (error) {
+          console.error(`Acceptance metric for order ${order._id.toHexString()} failed:`, error);
+        }
       }
 
       // Phase 10: charge add-ons off-session to the card saved at
@@ -480,7 +646,89 @@ export async function processCutoffs(now: Date = new Date()): Promise<CutoffSumm
       }
     }
   }
+
+  // Phase O.2 (§2.2): any order still unrouted at its cutoff fails with
+  // `no_vendor_available` — never charged, never handed off. The user is
+  // notified, and a run of consecutive such failures escalates to the admin
+  // failures panel (likely coverage gap). Claimed atomically so re-runs are
+  // no-ops (critical rule #1).
+  for (;;) {
+    const order = await orders.findOneAndUpdate(
+      { status: "scheduled", cutoffAt: { $lte: now }, vendorId: { $exists: false } },
+      {
+        $set: { status: "failed", failureReason: "no_vendor_available", updatedAt: now },
+        $unset: { confirmedAt: "" },
+      },
+      { returnDocument: "after" },
+    );
+    if (!order) break;
+    summary.processed += 1;
+    summary.failed.push({ orderId: order._id.toHexString(), reason: "no_vendor_available" });
+
+    // Escalate after N consecutive no_vendor_available failures (this one + the
+    // user's prior run). Best-effort flag for admin visibility — never charges.
+    try {
+      const priorDesc = await orders
+        .find({
+          userId: order.userId,
+          source: "personal",
+          date: { $lt: order.date },
+        })
+        .sort({ date: -1 })
+        .limit(COVERAGE_GAP_ESCALATION_THRESHOLD)
+        .project<{ status: Order["status"]; failureReason?: string }>({
+          status: 1,
+          failureReason: 1,
+        })
+        .toArray();
+      const streak = 1 + countLeadingNoVendorFailures(priorDesc);
+      if (streak >= COVERAGE_GAP_ESCALATION_THRESHOLD) {
+        await orders.updateOne(
+          { _id: order._id },
+          { $set: { coverageGapEscalated: true, updatedAt: now } },
+        );
+      }
+    } catch (error) {
+      console.error(`Coverage-gap escalation for ${order._id.toHexString()} failed:`, error);
+    }
+
+    await notifyNoVendorFailure(order);
+    await emitOrderEvent("order.failed", order, now);
+  }
+
   return summary;
+}
+
+/**
+ * Notify a subscriber that no café could be found to make their coffee today,
+ * so the day was skipped (Phase O.2 §2.2). Best-effort — never throws; the
+ * subscription stays active and tomorrow is unaffected.
+ */
+async function notifyNoVendorFailure(order: Order): Promise<void> {
+  try {
+    const users = await usersCollection();
+    const user = await users.findOne({ _id: order.userId });
+    if (!user) return;
+    const title = "No café available today";
+    const body =
+      `We couldn't find a café to make your ${order.drink.drink} on ${order.date}, ` +
+      `so today is skipped — you weren't charged. Your plan stays active and tomorrow is unaffected.`;
+
+    const pushResult = await sendPushToUser(user, { title, body });
+    if (pushResult.invalidTokens.length > 0) {
+      await users.updateOne(
+        { _id: user._id },
+        { $pull: { fcmTokens: { $in: pushResult.invalidTokens } } },
+      );
+    }
+    await sendEmail({
+      to: user.email,
+      subject: title,
+      html: `<p>${escapeHtml(body)}</p><p><a href="${process.env.APP_BASE_URL ?? ""}/dashboard">Open BrewPass</a></p>`,
+    });
+  } catch (error) {
+    console.error(`No-vendor notify for order ${order._id.toHexString()} failed:`, error);
+  }
 }
 
 export interface CoffeeChargeOutcome {

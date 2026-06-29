@@ -333,8 +333,11 @@ async function applyTransition(
     await handleOrderDelivered(orderId, now);
     if (order) {
       // Best-effort quality + SMS; must not fail the (already money-gating) tx.
+      // A delivered order always has a vendor (guard narrows the Phase O.2 type).
       try {
-        await recordDelivery(order.vendorId, isOnTime(now, order.deliverAt), now);
+        if (order.vendorId) {
+          await recordDelivery(order.vendorId, isOnTime(now, order.deliverAt), now);
+        }
       } catch (error) {
         console.error(`On-time metric for order ${orderId.toHexString()} failed:`, error);
       }

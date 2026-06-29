@@ -21,7 +21,9 @@ export type OrderEventType =
   | "order.failed"
   | "refund.issued";
 
-async function vendorExternalId(vendorId: ObjectId): Promise<string | null> {
+async function vendorExternalId(vendorId: ObjectId | undefined): Promise<string | null> {
+  // An unrouted order (Phase O.2) has no vendor — emit with a null vendor ref.
+  if (!vendorId) return null;
   const vendors = await vendorsCollection();
   const vendor = await vendors.findOne({ _id: vendorId }, { projection: { externalId: 1 } });
   return vendor?.externalId ?? null;
