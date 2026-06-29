@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Card, SectionLabel } from "@/components/ui/card";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import type { SubscriptionJson } from "@/lib/serializers";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -12,6 +15,15 @@ const STATUS_LABELS: Record<string, string> = {
   past_due: "Payment overdue",
   incomplete: "Awaiting payment",
   canceled: "Canceled",
+};
+
+const STATUS_TONES: Record<string, StatusTone> = {
+  active: "active",
+  trialing: "active",
+  paused: "skipped",
+  past_due: "failed",
+  incomplete: "scheduled",
+  canceled: "failed",
 };
 
 export function SubscriptionPanel({
@@ -59,31 +71,40 @@ export function SubscriptionPanel({
   const quotaLeft = Math.max(0, subscription.quota.total - subscription.quota.used);
 
   return (
-    <div className="flex flex-col gap-4 rounded-md border border-neutral-200 p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">BrewPass {planName}</h2>
-          <p className="text-sm text-neutral-500">
+    <Card className="flex flex-col gap-4 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel>
+            BrewPass · {perCoffee ? "Pay as you go" : planName}
+          </SectionLabel>
+          <StatusPill tone={STATUS_TONES[subscription.status] ?? "scheduled"}>
             {STATUS_LABELS[subscription.status] ?? subscription.status}
-            {perCoffee && subscription.status === "active" && " · charged per coffee, no monthly fee"}
-            {subscription.cancelAtPeriodEnd && ` · ends ${periodEnd}`}
-            {!perCoffee &&
-              !subscription.cancelAtPeriodEnd &&
-              subscription.status === "active" &&
-              ` · renews ${periodEnd}`}
+          </StatusPill>
+          <p className="text-sm text-coffee">
+            {perCoffee ? (
+              <>Charged per coffee. No monthly fee — only when one is made.</>
+            ) : (
+              <>
+                {subscription.cancelAtPeriodEnd
+                  ? `Ends ${periodEnd}`
+                  : subscription.status === "active"
+                    ? `Renews ${periodEnd}`
+                    : STATUS_LABELS[subscription.status]}
+              </>
+            )}
           </p>
         </div>
         {!perCoffee && (
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900">
-            {quotaLeft} of {subscription.quota.total} coffees left
+          <span className="shrink-0 font-mono text-sm font-semibold text-espresso">
+            {quotaLeft}/{subscription.quota.total}
           </span>
         )}
       </div>
 
       {!perCoffee && (
-        <div className="h-2 overflow-hidden rounded-full bg-neutral-100">
+        <div className="h-2 overflow-hidden rounded-full bg-hairline">
           <div
-            className="h-full bg-amber-700"
+            className="h-full bg-coffee"
             style={{
               width: `${Math.min(100, (subscription.quota.used / Math.max(1, subscription.quota.total)) * 100)}%`,
             }}
@@ -92,56 +113,37 @@ export function SubscriptionPanel({
       )}
 
       {!manageable && (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-muted">
           This plan is managed by your company&apos;s billing owner.
         </p>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {manageable && subscription.status === "active" && !subscription.cancelAtPeriodEnd && (
-          <button
-            type="button"
-            onClick={() => manage("pause")}
-            disabled={busy}
-            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
-          >
-            Pause
-          </button>
-        )}
-        {manageable && subscription.status === "paused" && (
-          <button
-            type="button"
-            onClick={() => manage("resume")}
-            disabled={busy}
-            className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-          >
-            Resume
-          </button>
-        )}
-        {manageable &&
-          (subscription.cancelAtPeriodEnd ? (
-            <button
-              type="button"
-              onClick={() => manage("reactivate")}
-              disabled={busy}
-              className="rounded-md bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-            >
+      {manageable && (
+        <div className="flex flex-wrap gap-3">
+          {subscription.status === "active" && !subscription.cancelAtPeriodEnd && (
+            <Button variant="secondary" onClick={() => manage("pause")} disabled={busy}>
+              Pause coffee
+            </Button>
+          )}
+          {subscription.status === "paused" && (
+            <Button onClick={() => manage("resume")} disabled={busy}>
+              Resume
+            </Button>
+          )}
+          {subscription.cancelAtPeriodEnd ? (
+            <Button onClick={() => manage("reactivate")} disabled={busy}>
               Keep my plan
-            </button>
+            </Button>
           ) : (
             subscription.status !== "canceled" && (
-              <button
-                type="button"
-                onClick={() => manage("cancel")}
-                disabled={busy}
-                className="rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-              >
-                Cancel plan
-              </button>
+              <Button variant="danger" onClick={() => manage("cancel")} disabled={busy}>
+                Cancel
+              </Button>
             )
-          ))}
-      </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-    </div>
+          )}
+        </div>
+      )}
+      {error && <p className="text-sm text-terracotta">{error}</p>}
+    </Card>
   );
 }

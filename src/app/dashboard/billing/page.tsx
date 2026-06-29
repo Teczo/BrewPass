@@ -3,13 +3,28 @@ import { redirect } from "next/navigation";
 
 import { SaveCardButton } from "@/components/save-card-button";
 import { SubscriptionPanel } from "@/components/subscription-panel";
+import { buttonClasses } from "@/components/ui/button";
+import { Card, SectionLabel } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import { getCurrentSubscription } from "@/lib/billing";
+import { ordersCollection } from "@/lib/collections";
+import { formatMyr } from "@/lib/format";
 import { PLANS } from "@/lib/plans";
 import { subscriptionToJson } from "@/lib/serializers";
+import { localDateOf } from "@/lib/time";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
 // Session-dependent: must render per-request, never be statically prerendered.
 export const dynamic = "force-dynamic";
+
+function formatChargeDate(date: string): string {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 export default async function BillingPage({
   searchParams,
@@ -19,36 +34,61 @@ export default async function BillingPage({
   const user = await getOrCreateCurrentUser();
   if (!user) redirect("/auth/login?returnTo=/dashboard/billing");
 
-  const [params, subscription] = await Promise.all([
+  const today = localDateOf(new Date());
+  const [params, subscription, orders] = await Promise.all([
     searchParams,
     getCurrentSubscription(user._id),
+    ordersCollection(),
   ]);
+  const recentOrders = await orders
+    .find({ userId: user._id, date: { $lt: today } })
+    .sort({ date: -1 })
+    .limit(6)
+    .toArray();
   const hasLiveSubscription = subscription !== null && subscription.status !== "canceled";
   const cardOnFile = hasLiveSubscription && subscription.billingMode === "card_on_file";
 
+  // Per-coffee charge total = price snapshot + any successfully-charged add-ons.
+  // Skipped/failed/refunded orders surface as RM0.00 (rule #1 auto-refund).
+  const charges = recentOrders.map((order) => {
+    const charged =
+      order.status === "skipped" ||
+      order.status === "failed" ||
+      order.chargeStatus === "refunded" ||
+      order.chargeStatus === "failed"
+        ? 0
+        : (order.priceSen ?? 0) +
+          (order.addOnsPaymentStatus === "failed"
+            ? 0
+            : (order.addOns ?? []).reduce((sum, addOn) => sum + addOn.priceSen, 0));
+    const addOnNames = (order.addOns ?? []).map((addOn) => addOn.name).join(", ");
+    return {
+      id: order._id.toHexString(),
+      label: `${order.drink.drink}${addOnNames ? ` + ${addOnNames}` : ""}`,
+      date: formatChargeDate(order.date),
+      skipped: order.status === "skipped",
+      amountSen: charged,
+    };
+  });
+
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 p-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Payment</h1>
-          <p className="text-sm text-neutral-500">
-            Your card on file. No subscription fee — coffee is charged per day at cutoff.
-          </p>
-        </div>
-        <Link href="/dashboard" className="text-sm text-amber-800 hover:underline">
-          ← Dashboard
-        </Link>
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 p-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-[26px] leading-tight text-espresso">Payment</h1>
+        <p className="text-sm text-coffee">
+          No subscription fee — coffee is charged per day at cutoff.
+        </p>
       </header>
 
       {params.success && (
-        <p className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+        <Notice tone="sage" icon="✓">
           Card saved — you&apos;re all set. Coffee is charged only on the days you get one.
-        </p>
+        </Notice>
       )}
       {params.canceled && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <Notice tone="amber" icon="⚠️">
           Card setup canceled — no card was saved.
-        </p>
+        </Notice>
       )}
 
       {hasLiveSubscription ? (
@@ -59,35 +99,70 @@ export default async function BillingPage({
             manageable={subscription.plan !== "corporate"}
           />
           {cardOnFile && (
-            <div className="flex flex-col gap-2 rounded-md border border-neutral-200 p-4">
-              <h2 className="font-semibold">Card on file</h2>
-              <p className="text-sm text-neutral-500">
-                Need to update the card we charge for your daily coffee?
-              </p>
+            <Card className="flex items-center justify-between gap-3 p-5">
+              <div className="flex flex-col gap-0.5">
+                <SectionLabel>Card on file</SectionLabel>
+                <p className="text-sm text-coffee">Charged per coffee at cutoff</p>
+              </div>
               <SaveCardButton
                 returnTo="billing"
                 label="Replace card"
-                className="self-start rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+                className={buttonClasses("secondary")}
               />
-            </div>
+            </Card>
           )}
         </>
       ) : (
-        <div className="flex flex-col gap-3 rounded-md border border-neutral-200 p-5">
-          <h2 className="font-semibold">Add your card to start</h2>
-          <p className="text-sm text-neutral-500">
+        <Card className="flex flex-col gap-3 p-5">
+          <h2 className="font-semibold text-espresso">Add your card to start</h2>
+          <p className="text-sm text-coffee">
             {subscription?.status === "canceled"
               ? "Your coffee is stopped. Save a card to start again — "
               : "No charge today and no monthly fee. We save your card and charge it only for the coffee you get, "}
             each day at that day&apos;s cutoff. Your schedule decides which days.
           </p>
-          <SaveCardButton returnTo="billing" label="Save my card" />
-        </div>
+          <SaveCardButton
+            returnTo="billing"
+            label="Save my card"
+            className={buttonClasses("primary", "w-full")}
+          />
+        </Card>
       )}
 
-      <p className="text-sm text-neutral-500">
+      <Notice>
+        Each weekday&apos;s coffee is charged silently at the{" "}
+        <span className="font-mono font-semibold">6:00 AM</span> cutoff. Edit or skip before then.
+      </Notice>
+
+      {charges.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <SectionLabel>Recent charges</SectionLabel>
+          <ul className="flex flex-col gap-3">
+            {charges.map((charge) => (
+              <Card
+                as="li"
+                key={charge.id}
+                className="flex items-center justify-between gap-3 p-4"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-semibold text-espresso">{charge.label}</span>
+                  <span className="text-xs text-muted">
+                    {charge.date}
+                    {charge.skipped && " · skipped"}
+                  </span>
+                </div>
+                <span className="font-mono text-sm font-semibold text-espresso">
+                  {formatMyr(charge.amountSen)}
+                </span>
+              </Card>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <p className="text-sm text-coffee">
         Setting up coffee for a team?{" "}
-        <Link href="/dashboard/corporate" className="text-amber-800 hover:underline">
+        <Link href="/dashboard/corporate" className="font-semibold text-coffee underline">
           Run office coffee
         </Link>{" "}
         — billed per delivered coffee on one company card, no seats.
