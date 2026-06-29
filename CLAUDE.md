@@ -327,6 +327,33 @@ Uber Direct uses OAuth 2.0 Client Credentials (access token with TTL). In server
 
 **Deliverable:** AU-market vendors are dispatched via Uber Direct (primary) with DoorDash Drive Classic as automatic fallback on dispatch failure, all through the existing `CourierAdapter` interface and state machine, with zero change to charging or payout logic. AU launch is single-vendor-per-delivery only; Phase L.3 for Perth is deferred pending multi-stop courier validation.
 
+### Phase N — Subscriber UI Enhancement (additive, look-and-feel only)
+**Goal:** apply the new **"BrewPass — Subscriber"** visual design (warm, calm café aesthetic) across all subscriber-facing screens. **Purely a restyle — no routing, charging, routing-engine, payout, or data-model changes.** This is behavior-preserving in the spirit of rule #13: new presentational markup wraps the **existing** server data and components; no feature is added, removed, or degraded. If a styling change would require altering server/data behavior, stop and confirm first.
+
+The source of truth is the design document (10 subscriber screens + a token sheet). Screens map 1:1 onto existing routes, with **one new route** (Profile hub) added.
+
+**Design tokens (single warm light theme — no dark mode):**
+- **Colors:** Paper `#E9E2D6`, Surface `#FFFFFF`, Espresso `#3B2317`, Coffee `#5C4632`, Muted `#978674`, Sage `#5C7A4E`, Terracotta `#B0503C`, Amber `#F5DCA6`, Sage-soft `#D9E4CC`, Hairline `#E6DCCB`.
+- **Type:** Fraunces (display/headings), Geist (heading/body), Geist Mono (figures — counts, prices, timers). Geist + Geist Mono are already wired in `layout.tsx`; **Fraunces must be added** via `next/font/google`.
+- **Primitives:** status pills (`Scheduled` / `Preparing` / `Delivered` / `Skipped` / `Failed` / `Active`), button variants, chip, stepper, notice, field, card — built once under `src/components/ui/` and reused.
+
+**Known mismatches to handle (none are app-breaking):**
+- **Profile tab has no route.** The bottom nav's 4th tab ("Profile") needs a **new** `src/app/dashboard/profile/page.tsx` (assembled from existing `profile-form`, `locations-manager`, `health-card`, billing/corporate summaries). The design label "`/dashboard` (profile + hub)" is misleading — real `/dashboard` is the Home screen; Profile is a distinct screen.
+- **`globals.css` ships a generic white/black theme + a `prefers-color-scheme: dark` override** that fights the warm palette. Replace the tokens and drop the dark-mode block.
+- **No shared mobile app-shell / bottom-nav component exists yet** — build once, reuse across the four `/dashboard/*` tab screens.
+
+- **N.0 — Design-system foundation.** Add color tokens + Fraunces (Tailwind v4 `@theme` in `globals.css`); remove the dark-mode override. Build the primitive UI components from the token sheet under `src/components/ui/`.
+- **N.1 — App shell + bottom nav.** `BottomNav` (Home `/dashboard` · Monthly `/dashboard/monthly` · Vendors `/dashboard/vendor` · Profile `/dashboard/profile`) and the shared mobile shell; used by all `/dashboard/*` screens.
+- **N.2 — Onboarding flow** (`/onboarding`, `/onboarding/locations`, `/onboarding/preferences`, `/onboarding/payment`): restyle the 4 steps + step indicator, drink/size/milk/strength chips, weekday schedule picker, Stripe card field, "no charge today / charged per coffee" copy.
+- **N.3 — Home / dashboard** (`/dashboard`): weekday-plan card, "Tomorrow's Coffee" detail card with pills, locks-in notice, Edit/Skip actions, recent deliveries with inline rating.
+- **N.4 — Vendors** (`/dashboard/vendor`): "Let AI pick / Browse cafés" toggle, AI-recommended + nearby vendor cards (rating/distance/price), Confirm CTA — over existing `vendor-selector`. Selection still takes effect only on confirm (rule #7).
+- **N.5 — Monthly planner** (`/dashboard/monthly`): proposed-month list, per-day cards (drink + vendor + rationale + skip), Rating/Proximity re-plan controls, month total + Confirm — over existing `monthly-list-planner`.
+- **N.6 — Profile hub (new route)** (`/dashboard/profile`): Your usual / Locations / Payment / Office coffee / Health summary / Log out, assembled from existing components.
+- **N.7 — Payment / billing** (`/dashboard/billing`): pay-as-you-go card, card-on-file, 6:00 AM cutoff explainer, recent charges (incl. skipped = RM0.00), Pause/Cancel.
+- **N.8 — Office coffee member view** (`/dashboard/corporate`): company card, member status pill, live "Arriving ~9:05" tracker, **advisory non-blocking** same-day overlap ("Keep both / Cancel one", default keep both — rule #17), join-by-code — over existing `office-coffee-tracker`, `overlap-notice`, `join-company-panel`.
+- **N.9 — Polish & verify.** Responsive pass, run the app per screen, confirm no behavior regressions, then push.
+- **Deliverable:** all subscriber screens reflect the new warm design through a reusable token/primitive system + shared app shell and bottom nav, with a new Profile hub route, and **zero change to any server, routing, charging, or data behavior.**
+
 ---
 
 ## Critical Rules for Claude Code
@@ -358,7 +385,7 @@ Uber Direct uses OAuth 2.0 Client Credentials (access token with TTL). In server
 ---
 
 ## Build Order Reminder
-A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G → H → **I (additive, last of the core build)** → **J (corporate team accounts — additive; coexists with personal accounts)** → **K (vendor promotions / packs — additive)** → **M (Perth courier adapters — additive; gated on API access approval and AU sandbox enablement)** → **L (multi-vendor consolidated delivery — PARKED; gated on courier multi-stop validation)**.
+A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G → H → **I (additive, last of the core build)** → **J (corporate team accounts — additive; coexists with personal accounts)** → **K (vendor promotions / packs — additive)** → **M (Perth courier adapters — additive; gated on API access approval and AU sandbox enablement)** → **L (multi-vendor consolidated delivery — PARKED; gated on courier multi-stop validation)** → **N (subscriber UI enhancement — additive; look-and-feel only, no behavior change)**.
 
 > **Current direction (as of 2026-06):** J and K are complete. **L.1 + L.2 (the software foundation) are now built** — the `DeliveryRun` model, per-vendor pickup-stop grouping, run-composition guards (rule #22 — ≥2 orders, no Pack orders, one shared drop), and the per-order-derived run-status rollup are in place and unit-tested, with single-vendor delivery unaffected (the run is optional). **L.3 (multi-stop courier dispatch) and L.4 (hot-coffee logistics rules) remain parked** — L.3 is gated on multi-stop courier capability that has not been validated (no current adapter supports it; `courierRunId` is reserved but unpopulated), and L.4 needs product decisions (max hold time, prep staggering, late-café policy — rule #11) ideally validated by a manual pilot first. Build order is **finish remaining J → K → M; L.1/L.2 done, L.3/L.4 deferred until courier multi-stop is confirmed.** **M is the active phase** and does not depend on L.
 
