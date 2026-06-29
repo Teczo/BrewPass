@@ -28,6 +28,7 @@
   --color-sage-ink: #4c6840; /* text on sage pills */
   --color-sage-line: #bcd0aa; /* delivered pill border */
   --color-terracotta-soft: #e3b6ac; /* terracotta borders */
+  --color-nav-muted: #a89684; /* inactive bottom-nav item */
 
   /* Background/foreground aliases (kept for existing references) */
   --color-background: var(--color-paper);
