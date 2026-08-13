@@ -420,9 +420,119 @@ A → B → C → **D (carefully)** → D.5 → **E (carefully)** → F → G �
 
 > **Current direction (as of 2026-06):** J and K are complete. **L.1 + L.2 (the software foundation) are now built** — the `DeliveryRun` model, per-vendor pickup-stop grouping, run-composition guards (rule #22 — ≥2 orders, no Pack orders, one shared drop), and the per-order-derived run-status rollup are in place and unit-tested, with single-vendor delivery unaffected (the run is optional). **L.3 (multi-stop courier dispatch) and L.4 (hot-coffee logistics rules) remain parked** — L.3 is gated on multi-stop courier capability that has not been validated (no current adapter supports it; `courierRunId` is reserved but unpopulated), and L.4 needs product decisions (max hold time, prep staggering, late-café policy — rule #11) ideally validated by a manual pilot first. Build order is **finish remaining J → K → M; L.1/L.2 done, L.3/L.4 deferred until courier multi-stop is confirmed.** **M is the active phase** and does not depend on L. **Phase O (graceful degradation & fallbacks, from `fallbacks.md`) is ✅ COMPLETE** — all of O.1–O.6 landed: launch waitlist (O.1), no-vendor lifecycle + post-charge reassignment (O.2 §2.2 + §2.5), charge-retry cadence decided as the Hobby retry-once interim with the retry-cron deferred to Pro (O.3), stuck-delivery sweeper + tracker degradation (O.4), per-panel error boundaries + route `error.tsx`/`loading.tsx` (O.5), and the corporate/auth/geo/webhook tail (O.6). The three ⚠ decisions were resolved (coverage-gap-vs-transient branch, the no-vendor routing behavior change, and the retry cadence). Two items are explicitly **deferred with documentation** (not regressions): the §12.1/§12.2 null-`geo` "unverified address" path (needs the geo-optional routing ripple) and §9.2 (the `*/5` webhook sweep cron, Hobby-blocked) — both in the Go-Live TODO / Phase O notes.
 
+> **Current status (as of 2026-08): the whole planned build A–O is complete and the app is deployed** to `https://brew-pass-psi.vercel.app/` (production tracks `main`). Nothing in A–O remains unbuilt except the two explicitly parked items (**L.3 / L.4**, gated on courier multi-stop capability) and the deferred items listed in the Go-Live TODO. **The next work is not a new feature phase — it is live production verification and go-live hardening (see "Deployment Status & Next Steps" below).** Do not start a new build phase until the live smoke-test in that section passes; a green local build says nothing about whether the hosted instance's env vars, first-run setup, and third-party webhooks are actually wired.
+
 D (routing) and E (charging/payouts) carry almost all the risk. If anything is shaky, it's there. D.5 (monthly list) is what makes "choose once a month" real and feeds scheduled orders into E. **I (service boundary + `/v1` API + webhooks + `externalId`/`tenantId` reservations) is additive and runs only once A–H are stable — it improves the backend without changing the frontend.** **K** adds vendor-priced packs/campaigns for offices (packs first, K.1), surfaced as optional savings. **L** is the differentiator and the hardest — its blocker is courier multi-stop capability, not code; validate logistics with a manual pilot before building the consolidation engine (parked until that capability is confirmed). **M** is additive and can begin in parallel with J–L once API access is provisioned; it does not depend on J, K, or L. AU market L.3 (consolidated delivery in Perth) needs separate multi-stop courier validation — Uber Direct and DoorDash Drive Classic are single-pickup only.
 
 ---
+
+## Deployment Status & Next Steps (checked 2026-08-13)
+
+The app is hosted at **`https://brew-pass-psi.vercel.app/`**. This section
+records what was actually verified, what could not be, and what to do next.
+Update it after each live verification pass.
+
+### What was verified (2026-08-13, commit `f136d94`)
+
+Verified by building and running the deployed commit locally — this proves the
+**code** is sound, not that the **hosted instance** is correctly configured:
+
+- `next build` (Next 16.2.7) — **passes**, all 74 API routes + 21 pages compile.
+- `tsc --noEmit` — **clean**. `eslint` — **clean**.
+- `vitest run` — **370 tests across 44 files, all passing**, covering the
+  high-risk paths (routing, charging, payouts, refunds, corporate card
+  separation, packs, courier adapters, Phase O fallbacks).
+
+**Not verified: the live hosted instance.** Live HTTP checks could not be run
+from the build environment (outbound egress to the domain is blocked by network
+policy). Everything under "Live smoke test" below is therefore **unconfirmed**
+and must be run by hand against the deployed URL. A passing build is not
+evidence that login, charging, or cron work in production — those depend
+entirely on Vercel env vars, the first-run setup, and third-party dashboards.
+
+### Findings from the check
+
+- 🔴 **Fixed: missing `phase-m` migration route.** `docs/deployment.md` §10/§11
+  instructs the operator to `POST /api/admin/migrations/phase-m` to backfill
+  `Vendor.market`, but the route did not exist (only the lib + tests did) — the
+  documented step returned 404. The route is now added, mirroring the
+  phase-a/i/j pattern. Not app-breaking before the fix (courier resolution
+  defaults `vendor.market ?? "MY"`), but the backfill was unrunnable.
+- ⚠ **Doc drift: `/v1` vs `/api/v1`.** The Phase I convention above and the
+  §11 checklist say the versioned API lives at `/v1`; the implemented routes
+  are at **`/api/v1/*`** and there is no rewrite. The API works — the path in
+  the docs is wrong. Either add a rewrite or correct the docs (prefer
+  correcting the docs; a rewrite is a new public surface, rule #15).
+- ⚠ **Next 16 deprecation: `middleware` → `proxy`.** The build warns that the
+  `middleware` file convention is deprecated. `src/middleware.ts` still works
+  on 16.x but should be renamed to the `proxy` convention before the next
+  Next.js major. Behavior-preserving rename; no auth logic change.
+- ⚠ **Nothing works until first-run setup is done.** A fresh deploy has no
+  admin (the first admin is set by flipping `role` to `"admin"` directly in
+  MongoDB — `src/lib/admin.ts`), and without an admin the setup buttons and
+  migration endpoints are unreachable, which blocks taxonomy seeding, indexes,
+  and vendor approval. If the hosted app "looks empty", check this first.
+- ⚠ **Hard-required env vars** (these throw at request time, they do not
+  degrade): `MONGODB_URI`, `AUTH0_DOMAIN` / `AUTH0_CLIENT_ID` /
+  `AUTH0_CLIENT_SECRET` / `AUTH0_SECRET`, `APP_BASE_URL`, `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, `GOOGLE_MAPS_API_KEY`, `CRON_SECRET`. Everything
+  else (Twilio, Resend, FCM, Sentry, Anthropic, all courier adapters) degrades
+  gracefully when unset, by design.
+- ⚠ **`APP_BASE_URL` must equal the live domain** (`https://brew-pass-psi.vercel.app`).
+  It is used for Stripe Checkout/Connect return URLs and Auth0 callbacks — a
+  stale value silently breaks card save, Connect onboarding, and login
+  redirects. Note `.env.example` still shows `CAP_SERVER_URL=https://brewpass.vercel.app`
+  (a *different* host) for the Capacitor shell; reconcile before a mobile build.
+- ✅ **Cron schedules are correct** for `Asia/Kuala_Lumpur` (Vercel cron is
+  UTC): generate-orders `0 12 * * *` = 20:00 KL, cutoff `0 22 * * *` = 06:00 KL,
+  payouts `0 15 * * *` = 23:00 KL. The webhooks cron is absent by design
+  (Hobby) — see the Go-Live TODO.
+
+### Next step: run the live smoke test
+
+Run these against the hosted URL, in order. This is the short version; the full
+matrix is `docs/deployment.md` §11 (which stays the source of truth).
+
+1. `GET /api/health` → expect `{"ok":true,"db":"up"}`. If `db:"down"`, fix
+   `MONGODB_URI` / Atlas network access before anything else.
+2. Log in. If login fails, check Auth0 callback URLs against `APP_BASE_URL`.
+3. Bootstrap the first admin (flip `role: "admin"` in Mongo), open `/admin`,
+   then run **Set up DB indexes** → **Seed menu taxonomy** (Phase A only if
+   upgrading v1 data), then `POST` `{"direction":"up"}` to
+   `/api/admin/migrations/phase-i`, `phase-j`, `phase-j2`, `phase-j7`, and
+   `phase-m` (now that the route exists).
+4. Stand up **Vendor #1**: `/vendor/apply` → approve in `/admin` → publish a
+   menu at `/vendor/menu` → complete Stripe Connect at `/vendor/profile`.
+   Routing will not assign a vendor with no menu coverage (rule #8 — Vendor #1
+   is not special-cased, it needs the same setup as anyone else).
+5. Subscribe as a test user (onboarding → location → preferences → save card),
+   confirm a monthly list, then exercise the daily loop with the cron secret:
+   `curl -H "Authorization: Bearer $CRON_SECRET" https://<domain>/api/cron/generate-orders`,
+   then `/api/cron/cutoff`, then mark delivered and run `/api/cron/payouts`.
+   Confirm: charge lands **before** vendor handoff, payout only **after**
+   delivery, and an undelivered order produces **no** transfer (rules #3, #4).
+6. Confirm the Stripe webhook endpoint is registered at
+   `https://<domain>/api/webhooks/stripe` and deliveries return 200.
+
+Record the outcome here. **If a step fails, fix it before starting new
+feature work** — an unverified production deploy is the biggest open risk,
+larger than any remaining feature.
+
+### Remaining work, in priority order
+
+1. **Live smoke test above** (blocking everything else).
+2. **Go-Live TODO** below — the Vercel Pro upgrade and the two missing crons
+   are the real "before real customers" gate.
+3. **Housekeeping from this check** — the `/v1` doc drift and the
+   `middleware` → `proxy` rename. Both small, neither urgent.
+4. **Parked, dependency-gated (do not start without the external unblock):**
+   - **L.3 / L.4** — consolidated delivery. Blocked on confirmed multi-stop
+     courier capability; validate with a manual pilot first (rule #22 — never
+     fake consolidation with sequential trips).
+   - **Phase M production access** — Uber Direct and DoorDash Drive API
+     approval; adapters are built and dormant until env vars are set.
+   - **`fallbacks.md` §12.1/§12.2** null-`geo` "unverified address" path —
+     needs the geo-optional routing ripple; documented, not a regression.
 
 ## Go-Live TODO (before real customers)
 
@@ -430,6 +540,20 @@ Deferred to keep the initial deploy on Vercel's free **Hobby** plan (Hobby
 allows only daily cron jobs). Revisit these the moment real, paying
 customers come on board:
 
+- [ ] **Run the live smoke test** in "Deployment Status & Next Steps" above
+  against `https://brew-pass-psi.vercel.app/` and record the result. This is
+  the top item: the hosted instance has never been verified end-to-end, and
+  every item below assumes a working deploy.
+- [ ] **Verify the hosted env vars.** Confirm all eight hard-required vars are
+  set in the Vercel project (they throw at request time rather than degrading),
+  and that `APP_BASE_URL` matches the live domain exactly — a stale value
+  breaks Stripe returns, Connect onboarding, and Auth0 callbacks silently.
+- [ ] **Fix the `/v1` vs `/api/v1` doc drift.** `docs/deployment.md` §11 and
+  the Phase I convention say `/v1`; the routes are at `/api/v1/*`. Correct the
+  docs rather than adding a rewrite (rule #15).
+- [ ] **Rename `src/middleware.ts` to the `proxy` convention.** Next 16 warns
+  the `middleware` file convention is deprecated. Behavior-preserving rename;
+  do it before the next Next.js major, not urgently.
 - [ ] **Re-add the outbound-webhooks cron.** It was removed from
   `vercel.json` because its `*/5 * * * *` (every-5-minutes) schedule is
   blocked on Hobby. The route still exists at
